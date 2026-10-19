@@ -2770,6 +2770,9 @@ bool BowStick(XINPUT_STATE* s) {
 // button go in instead. Shooting and striking both go that way, running
 // backwards included.
 
+// Thrown from the right hand: a javelin, a throwing weapon or a throwing potion.
+bool ThrownType(uint32_t type) { return type == D2RVR_TYPE_JAVELIN || type == D2RVR_TYPE_THROWING || type == D2RVR_TYPE_POTION; }
+
 // The aiming hand per weapon set, as the player sets it: a bow in set I aimed
 // with the left hand, a sword in set II with the right - or both sets right,
 // or both left; the weapon itself does not decide.
@@ -2779,7 +2782,7 @@ int AimHand() {
     const uint32_t wc = gamestate::WeaponClass();
     const bool ranged = wc == 3 || wc == 4;   // D2RVR_WEAPON_BOW, D2RVR_WEAPON_CROSSBOW
     const uint32_t type = gamestate::WeaponType();
-    const bool thrown = type == D2RVR_TYPE_JAVELIN || type == D2RVR_TYPE_THROWING;   // thrown from the right hand
+    const bool thrown = ThrownType(type);   // thrown from the right hand
     const int hand = thrown ? 0 : ranged && g_set.rangedLeft.load() ? 1 : gamestate::WeaponSet() == 2 ? g_set.bowHand2.load() : g_set.bowHand.load();
     const D2RVR_Shared* sh = g_shared;
     if (sh && sh->version == D2RVR_SHARED_VERSION && !(sh->handsValid & (1u << hand)) && (sh->handsValid & (1u << (hand ^ 1))))
@@ -2918,7 +2921,7 @@ bool HandRay(float* o, float* d,bool forceGround=true) {
     // closed hand: it flies along +Z (its point is on that side - -Z threw it
     // backwards), never where the knuckles point.
     const uint32_t type = gamestate::WeaponType();
-    const bool thrown = type == D2RVR_TYPE_JAVELIN || type == D2RVR_TYPE_THROWING;
+    const bool thrown = ThrownType(type);
     const float rod[3] = {-a[0], -a[1], -a[2]};
 #if D2RVR_FIRST_PERSON
     // A crossbow held as the staff shoots along its stock as the model lies (skeletons.cpp
@@ -3347,7 +3350,7 @@ float* HookAttackPoint(void* mgr, float* out, void* unit, uint64_t from, uint64_
     const uint32_t w = gamestate::WeaponClass();
     float gx, gy;
     const uint32_t type = gamestate::WeaponType();
-    const bool thrown = type == D2RVR_TYPE_JAVELIN || type == D2RVR_TYPE_THROWING;
+    const bool thrown = ThrownType(type);
     bool selectedSpell=false;
 #ifdef D2RVR_NATIVE_OPENXR
     selectedSpell=framevr::SpellSelected();

@@ -171,6 +171,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
 | Throw a javelin | Javelin equipped in WEAPON mode: hold right trigger, make a deliberate throwing motion, release to throw along the hand's motion. Native basic throw consumes ammunition; trigger-free jabs stay available |
+| Throw a throwing potion | Gas or oil throwing potion equipped in the right hand, WEAPON mode: the same trigger, throwing motion and release as a javelin. The game lobs its own bottle at the floor point where the throw's line meets the ground; a level or upward throw goes as far as the game's own range allows. One potion of the stack per throw; off with **Motion combat** like every motion throw (log `Frame potion throw:`) |
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
@@ -478,7 +479,8 @@ weapon swap. Unassigned/unavailable slots cannot cast; costs and timing remain
 native. Candidate host tests pass; headset quick-cast validation is pending.
 
 Equipping a different melee weapon or bow selects weapon mode. Javelins and
-throwing weapons use free-swing contacts; select the native Throw skill to throw.
+throwing weapons use free-swing contacts; javelins and throwing potions also
+throw by motion (above). Select the native Throw skill to throw anything else.
 Full 3D spell projectiles, reliable terrain-aware destinations and spell-family
 adapters remain pending behind the same simple point-and-trigger control.
 

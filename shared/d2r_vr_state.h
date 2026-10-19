@@ -18,16 +18,17 @@ enum D2RVR_WeaponClass : uint32_t {
 };
 
 // The weapon's kind, from the game's own ItemTypes (gamestate.cpp), one
-// BodyWalk mapping tab each: "D2R " + the name below.
+// BodyWalk mapping tab each: "D2R " + the name below. New kinds go last, so
+// the numbers already shared with the bridge and settings keep their meaning.
 enum D2RVR_WeaponType : uint32_t {
     D2RVR_TYPE_UNKNOWN = 0, D2RVR_TYPE_UNARMED, D2RVR_TYPE_BOW, D2RVR_TYPE_CROSSBOW, D2RVR_TYPE_SWORD,
     D2RVR_TYPE_AXE, D2RVR_TYPE_MACE, D2RVR_TYPE_SCEPTER, D2RVR_TYPE_WAND, D2RVR_TYPE_STAFF,
     D2RVR_TYPE_POLEARM, D2RVR_TYPE_SPEAR, D2RVR_TYPE_DAGGER, D2RVR_TYPE_THROWING, D2RVR_TYPE_JAVELIN,
-    D2RVR_TYPE_CLAW, D2RVR_TYPE_ORB, D2RVR_TYPE_OTHER, D2RVR_TYPE_COUNT
+    D2RVR_TYPE_CLAW, D2RVR_TYPE_ORB, D2RVR_TYPE_OTHER, D2RVR_TYPE_POTION, D2RVR_TYPE_COUNT
 };
 inline const char* const kD2RVRWeaponTypeNames[D2RVR_TYPE_COUNT] = {
     "", "Unarmed", "Bow", "Crossbow", "Sword", "Axe", "Mace", "Scepter", "Wand", "Staff",
-    "Polearm", "Spear", "Dagger", "Throwing", "Javelin", "Claw", "Orb", "Other"};
+    "Polearm", "Spear", "Dagger", "Throwing", "Javelin", "Claw", "Orb", "Other", "Potion"};
 
 #pragma pack(push, 1)
 struct D2RVR_State {

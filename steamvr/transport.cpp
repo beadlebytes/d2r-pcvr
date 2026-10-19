@@ -1221,7 +1221,7 @@ gameplay::Weapon MotionWeapon() {
     switch(gamestate::WeaponType()) {
         case D2RVR_TYPE_BOW:return gameplay::Weapon::Bow;
         case D2RVR_TYPE_CROSSBOW:return gameplay::Weapon::Crossbow;
-        case D2RVR_TYPE_JAVELIN:return gameplay::Weapon::Javelin;
+        case D2RVR_TYPE_JAVELIN:case D2RVR_TYPE_POTION:return gameplay::Weapon::Javelin; // the same throw from the hand
         case D2RVR_TYPE_UNARMED:case D2RVR_TYPE_SWORD:case D2RVR_TYPE_AXE:case D2RVR_TYPE_MACE:
         case D2RVR_TYPE_SCEPTER:case D2RVR_TYPE_WAND:case D2RVR_TYPE_STAFF:case D2RVR_TYPE_POLEARM:
         case D2RVR_TYPE_SPEAR:case D2RVR_TYPE_DAGGER:case D2RVR_TYPE_CLAW:
@@ -1912,7 +1912,9 @@ void Input() {
     if(!motionInput.active||(!motionOutput.bowReady&&!motionOutput.javelinReady))bowNeedsWorld=bowHasShot=false;
     if(motionOutput.bowRelease||motionOutput.javelinRelease) {
         bowPending={};bowPending.origin=motionInput.hand[0].p;bowPending.direction=motionOutput.rayDirection;
-        if(motionOutput.javelinRelease) {
+        if(motionOutput.javelinRelease&&gamestate::WeaponType()==D2RVR_TYPE_POTION) {
+            bowPending.kind=bowflight::Kind::Potion; // leaves the hand itself, no shaft behind it
+        } else if(motionOutput.javelinRelease) {
             bowPending.kind=bowflight::Kind::Javelin;
             bowPending.origin=bowPending.origin-bowPending.direction*bowflight::JavelinGrip;
         } else if(quiverArrow.Active()) {

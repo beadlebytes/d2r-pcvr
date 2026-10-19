@@ -120,6 +120,10 @@ struct Launch {
     std::array<int,24> slots{};
 };
 thread_local Launch launch;
+// A throwing potion inside its native throw: Shoot aims the game's own missile.
+struct PotionThrow {Shot shot{};uintptr_t game=0,player=0;int missile=-1,cells=0;bool aimed=false;};
+thread_local PotionThrow potion;
+std::atomic<unsigned> potionThrows{0};std::atomic<int> potionMissile{-1},potionCells{0};
 thread_local int creatingVisual=-1;
 thread_local uint64_t visualSession=0,visualSequence=0;
 thread_local uint64_t previewCreatingSession=0;
@@ -378,6 +382,17 @@ int Collision(uintptr_t game,uintptr_t unit) {
 }
 uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,int extra,
                 int offsetX,int offsetY,int targetX,int targetY,int ammo) {
+    if(potion.game==game&&potion.player==player&&!potion.aimed) {
+        // Native start, flight, range and burst; only the cell the throw chose.
+        Vec p{};
+        if(!Position(player,p))return 0; // before native costs
+        const int x=int(p.x*.5f),y=int(p.z*.5f);
+        if(!LobTarget(potion.shot,x,y,targetX,targetY))return 0;
+        potion.aimed=true;
+        const auto unit=originalShoot(game,missile,player,skill,level,extra,offsetX,offsetY,targetX,targetY,ammo);
+        if(unit){potion.missile=missile;potion.cells=int(std::hypot(float(targetX-x),float(targetY-y)));}
+        return unit;
+    }
     if(launch.slot>=0&&launch.game==game&&launch.player==player) {
         if(missile!=int(MissileId(launch.shot)))return 0; // before native costs
         Vec p{};if(!Position(player,p))return 0;
@@ -393,6 +408,17 @@ uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,
         if(x<1||y<1||targetX<1||targetY<1||x>65534||y>65534||targetX>65534||targetY>65534)return 0;
     }
     return originalShoot(game,missile,player,skill,level,extra,offsetX,offsetY,targetX,targetY,ammo);
+}
+// The javelin's native throw, which spends one potion of the stack. The game
+// creates and draws its own lobbed bottle; nothing is tracked or drawn here.
+void ThrowPotion(const Shot& shot,uintptr_t game,uintptr_t player) {
+    if(gamestate::WeaponType()!=D2RVR_TYPE_POTION){++refused;return;}
+    combat::ObserveLocalPlayer(player);
+    const auto saved=potion;potion={};potion.shot=shot;potion.game=game;potion.player=player;
+    reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(ThrowRva))(game,player,2,1);
+    if(potion.missile>=0){++potionThrows;potionMissile=potion.missile;potionCells=potion.cells;}
+    else ++refused;
+    potion=saved;
 }
 void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     std::array<Shot,4> batch;size_t n=0;
@@ -425,6 +451,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         if(!framevr::coordinates::MatchesPlayer(p,shot.player,shot.unitsPerMetre)) {
             ++refused;++positionMismatch;continue;
         }
+        if(shot.kind==Kind::Potion){ThrowPotion(shot,game,player);continue;}
         int level=1;
         const bool javelin=shot.kind==Kind::Javelin;
         const bool spell=shot.kind==Kind::Spell;
@@ -1105,6 +1132,10 @@ void Report() {
         framevr::logging::Write(line);
     }
     spellvr::Report();
+    if(const auto count=potionThrows.exchange(0)) {
+        char line[144];snprintf(line,sizeof line,"Frame potion throw: native throws=%u, last missile=%d aimed %d cells out",count,potionMissile.load(),potionCells.load());
+        framevr::logging::Write(line);
+    }
     {
         const auto shots=quiverShots.exchange(0),fallbacks=quiverFallbacks.exchange(0),refusedStart=quiverRefused.exchange(0);
         if(shots||fallbacks||refusedStart) {

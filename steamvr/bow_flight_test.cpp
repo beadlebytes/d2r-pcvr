@@ -146,6 +146,24 @@ int main() {
         }
     }
     {
+        // Player at cell 200,200, hand 1.4 m above the floor, 4 units a metre.
+        auto s=Release();s.kind=Kind::Potion;
+        Check(Valid(s)&&ProjectileLength(s)==0&&!BasicMissile(MissileId(s)),"throwing potion is valid without a missile or shaft of its own");
+        auto skill=s;skill.skill=2;Check(!Valid(skill),"throwing potion never carries a skill");
+        int x=0,y=0;Vec floor{};
+        s.direction=framevr::math::Normalized(Vec{0,-1,-1});
+        Check(FloorPoint(s,floor)&&Near(floor.z,98.6f)&&Near(floor.y,0),"downward throw lands where it meets the floor");
+        Check(LobTarget(s,200,200,x,y)&&x==200&&y==197,"downward throw aims at that floor cell");
+        s.direction={0,0,-1};
+        Check(!FloorPoint(s,floor)&&LobTarget(s,200,200,x,y)&&x==200&&y==140,"level throw leaves the reach to the game's own range");
+        s.direction=framevr::math::Normalized(Vec{0,.6f,-.8f});
+        Check(LobTarget(s,200,200,x,y)&&x==200&&y==140,"rising throw aims along its heading");
+        s.direction={0,1,0};Check(LobTarget(s,200,200,x,y)&&x==200&&y==201,"straight up never targets the start cell");
+        s.direction={0,-1,0};Check(LobTarget(s,200,200,x,y)&&x==200&&y==201,"straight down lands at the feet, not the start cell");
+        s.player={.2f,0,100};s.origin={.2f,1.4f,100};s.direction={-1,0,0};
+        Check(!LobTarget(s,0,200,x,y),"a target off the map is never sent");
+    }
+    {
         // The nocked mesh must match the tracked guide even when the native
         // bow's grip/animation rig differs. Releasing starts at that same pose.
         for(float upm:{2.f,3.8899f,8.f})for(const Vec direction:{Vec{0,0,-1},Vec{1,0,0},Vec{0,1,0},Vec{0,-1,0},Vec{.6f,0,.8f}}) {

@@ -13,7 +13,9 @@ namespace framevr::bowflight {
 using math::Vec;
 inline constexpr float ArrowLength=.75f; // same tail/tip as the tracked draw guide
 inline constexpr float JavelinLength=1.5f,JavelinGrip=.6f;
-enum class Kind : uint32_t { Arrow=0,Javelin=1,Spell=2,Crossbow=31 };
+// Potion: a throwing potion (ItemTypes "tpot"). No missile id of its own - the
+// game's throw takes the potion's - and no tracked flight: see FloorPoint.
+enum class Kind : uint32_t { Arrow=0,Javelin=1,Spell=2,Crossbow=31,Potion=0x10000 };
 inline float Length(Vec v) { return std::sqrt(math::Dot(v,v)); }
 inline bool Finite(Vec v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z); }
 struct Shot {
@@ -29,7 +31,7 @@ struct Shot {
     bool planar=true;
     float boltLength=0; // authored held-bolt size, metres
 };
-inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Spell?0:s.kind==Kind::Crossbow?s.boltLength:s.kind==Kind::Javelin?JavelinLength:ArrowLength;}
+inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Spell||s.kind==Kind::Potion?0:s.kind==Kind::Crossbow?s.boltLength:s.kind==Kind::Javelin?JavelinLength:ArrowLength;}
 // A quiver arrow: a physical bow release that carries a single-missile arrow
 // skill. It keeps the arrow's draw, length and flight; the skill supplies the
 // native missile, its costs, damage and hit effects.
@@ -55,7 +57,8 @@ inline Vec RenderGround(const Shot& shot,Vec gridWorld) {
 }
 inline bool Valid(const Shot& s) {
     const bool kind=(BasicMissile(uint32_t(s.kind))&&(!SkillArrow(s)||(weaponskills::QuiverSkill(s.skill)&&weaponskills::QuiverMissile(s.missile))))||
-        (s.kind==Kind::Spell&&spellcast::Supported(s.skill)&&s.hand>=0&&s.hand<2&&s.slot>=0&&s.slot<10);
+        (s.kind==Kind::Spell&&spellcast::Supported(s.skill)&&s.hand>=0&&s.hand<2&&s.slot>=0&&s.slot<10)||
+        (s.kind==Kind::Potion&&s.skill<0);
     return kind&&s.session&&s.sequence&&Finite(s.origin)&&Finite(s.direction)&&Finite(s.player)&&
         std::isfinite(s.unitsPerMetre)&&s.unitsPerMetre>=1&&s.unitsPerMetre<=12&&
         std::isfinite(s.draw)&&s.draw>=0&&s.draw<=1&&
@@ -81,6 +84,28 @@ public:
         session=s.session;sequence=s.sequence;return true;
     }
 };
+// Jeff, 2026-10-19: a throwing potion keeps the game's own throw - its lob,
+// range, burst and stack cost - so only its target cell comes from the hand:
+// where the release line meets the launch floor. A level or rising throw
+// never meets it; it aims along its heading at a javelin's 60-cell point and
+// the game's own range ends the lob. x,y: the player's cell.
+inline bool FloorPoint(const Shot& s,Vec& out) {
+    const float drop=s.origin.y-s.player.y;
+    if(!(s.direction.y<-.01f)||!(drop>=0))return false;
+    out=s.origin+s.direction*(drop/-s.direction.y);out.y=s.player.y;return true;
+}
+inline bool LobTarget(const Shot& s,int x,int y,int& targetX,int& targetY) {
+    Vec floor{};
+    if(FloorPoint(s,floor)) {
+        const Vec cell=GridPoint(s,floor)*s.unitsPerMetre;
+        targetX=int(cell.x*.5f);targetY=int(cell.z*.5f);
+    } else {
+        const float flat=std::hypot(s.direction.x,s.direction.z);
+        targetX=x+(flat>.01f?int(s.direction.x/flat*60):0);targetY=y+(flat>.01f?int(s.direction.z/flat*60):0);
+    }
+    if(targetX==x&&targetY==y)++targetY;
+    return targetX>=1&&targetY>=1&&targetX<=65534&&targetY<=65534;
+}
 
 // Earliest point where the moving arrow tip enters a creature capsule. The
 // complete segment is tested even when an arrow crosses a body in one tick.

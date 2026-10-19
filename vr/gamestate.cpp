@@ -266,7 +266,7 @@ void CalibrateTypes() {
         {"scep", D2RVR_TYPE_SCEPTER}, {"wand", D2RVR_TYPE_WAND}, {"staf", D2RVR_TYPE_STAFF},
         {"pole", D2RVR_TYPE_POLEARM}, {"spea", D2RVR_TYPE_SPEAR}, {"aspe", D2RVR_TYPE_SPEAR},
         {"knif", D2RVR_TYPE_DAGGER}, {"tkni", D2RVR_TYPE_THROWING}, {"taxe", D2RVR_TYPE_THROWING},
-        {"jave", D2RVR_TYPE_JAVELIN}, {"ajav", D2RVR_TYPE_JAVELIN},
+        {"jave", D2RVR_TYPE_JAVELIN}, {"ajav", D2RVR_TYPE_JAVELIN}, {"tpot", D2RVR_TYPE_POTION},
         {"h2h ", D2RVR_TYPE_CLAW}, {"h2h2", D2RVR_TYPE_CLAW}, {"orb ", D2RVR_TYPE_ORB}};
     std::string found;
     for(const char* code:{"shie","ashd","head"}) {
