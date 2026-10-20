@@ -84,7 +84,7 @@ public:
         session=s.session;sequence=s.sequence;return true;
     }
 };
-// Jeff, 2026-10-19: a throwing potion keeps the game's own throw - its lob,
+// 2026-10-19: a throwing potion keeps the game's own throw - its lob,
 // range, burst and stack cost - so only its target cell comes from the hand:
 // where the release line meets the launch floor. A level or rising throw
 // never meets it; it aims along its heading at a javelin's 60-cell point and

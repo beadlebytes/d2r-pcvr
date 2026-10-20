@@ -170,7 +170,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
-| Throw a javelin | Javelin equipped in WEAPON mode: hold right trigger, make a deliberate throwing motion, release to throw along the hand's motion. Native basic throw consumes ammunition; trigger-free jabs stay available |
+| Throw a javelin | Javelin equipped in WEAPON mode, right trigger bound to Attack, Throw or nothing: hold right trigger, make a deliberate throwing motion, release to throw along the hand's motion. Native basic throw consumes ammunition; trigger-free jabs stay available |
 | Throw a throwing potion | Gas or oil throwing potion equipped in the right hand, WEAPON mode: the same trigger, throwing motion and release as a javelin. The game lobs its own bottle at the floor point where the throw's line meets the ground; a level or upward throw goes as far as the game's own range allows. One potion of the stack per throw; off with **Motion combat** like every motion throw (log `Frame potion throw:`) |
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
