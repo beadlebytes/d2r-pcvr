@@ -35,6 +35,7 @@
 #include "dropped_item_labels.h"
 #include "window_focus.h"
 #include "gameplay.h"
+#include "spell_aim.h"
 #include "hand_controls.h"
 #include "interaction_ui.h"
 #include "sewer_prompt_art.h"
@@ -289,6 +290,9 @@ struct ShieldCast {
 };
 ShieldCast shieldCast;
 weaponskills::Pulse shieldPulse;
+// A throwing potion's release: the game's own Throw is pressed once (gameplay
+// pulse) and aimed here, in world = grid axes, when its command resolves.
+struct PotionThrow {math::Vec world{};float speed=0;uint64_t at=0;int slot=-1;bool valid=false,aimed=false;} potionThrow;
 // [bow] quiver: face-button arrow skills load the following physical arrows.
 std::atomic<bool> quiverEnabled{true},quiverPreview{true};
 weaponskills::Quiver quiver;
@@ -1760,6 +1764,16 @@ void Input() {
         }
         if(quiverArrow.Active()){motionInput.bowSlot=-1;motionInput.bowSkill=-1;}
     }
+    // A throwing potion uses the slot holding native Throw, the right trigger's
+    // first. Throw lists among the skills while a throwable is in the hand.
+    motionInput.throwSlot=motionInput.throwSkill=motionInput.throwOwner=-1;
+    if(gamestate::WeaponType()==D2RVR_TYPE_POTION&&quickFresh)
+        for(int i=0;i<skills::Count&&motionInput.throwSlot<0;++i) {
+            const int slot=(skills::TriggerSlot(0)+i)%skills::Count;
+            const auto& skill=quickSnapshot.skills[slot];
+            if(skill.known&&skill.available&&skill.id==weaponskills::Throw)
+                {motionInput.throwSlot=slot;motionInput.throwSkill=skill.id;motionInput.throwOwner=skill.owner;}
+        }
     const bool requestedKnown=requested>=0&&quickFresh&&quickSnapshot.skills[requested].known&&quickSnapshot.skills[requested].available;
     handOutput.interact=requestedKnown&&quickSnapshot.skills[requested].id==357;
     const bool quick=requested>=0&&requested!=skills::TriggerSlot(0);
@@ -1910,11 +1924,20 @@ void Input() {
     }
     skel::SetMotionBow(motionInput.active&&motionOutput.bowReady,motionOutput.bowDrawing,motionOutput.draw,s.rightHand,s.leftHand,s.sampleStamp);
     if(!motionInput.active||(!motionOutput.bowReady&&!motionOutput.javelinReady))bowNeedsWorld=bowHasShot=false;
-    if(motionOutput.bowRelease||motionOutput.javelinRelease) {
+    const bool potionHeld=gamestate::WeaponType()==D2RVR_TYPE_POTION;
+    if(motionOutput.nativeThrowRelease) {
+        potionThrow={};potionThrow.at=GetTickCount64();potionThrow.slot=motionInput.throwSlot;potionThrow.speed=motionOutput.draw;
+        potionThrow.valid=stageWorld.valid;
+        if(stageWorld.valid)potionThrow.world=math::Rotate(stageWorld.base,motionOutput.rayDirection);
+        char line[200];std::snprintf(line,sizeof line,"Frame potion throw: release presses native Throw slot=%d reach=%.2f world=%d",
+            potionThrow.slot,spellaim::PotionReach(motionOutput.rayDirection,motionOutput.draw),int(potionThrow.valid));
+        Say(line);
+    }
+    if(motionOutput.javelinRelease&&potionHeld)
+        Say("Frame hand throw dropped: kind=potion reason=no skill slot holds Throw - bind Throw (listed while a throwing potion is held), e.g. to the right trigger");
+    if(motionOutput.bowRelease||(motionOutput.javelinRelease&&!potionHeld)) {
         bowPending={};bowPending.origin=motionInput.hand[0].p;bowPending.direction=motionOutput.rayDirection;
-        if(motionOutput.javelinRelease&&gamestate::WeaponType()==D2RVR_TYPE_POTION) {
-            bowPending.kind=bowflight::Kind::Potion; // leaves the hand itself, no shaft behind it
-        } else if(motionOutput.javelinRelease) {
+        if(motionOutput.javelinRelease) {
             bowPending.kind=bowflight::Kind::Javelin;
             bowPending.origin=bowPending.origin-bowPending.direction*bowflight::JavelinGrip;
         } else if(quiverArrow.Active()) {
@@ -2877,6 +2900,21 @@ int TakeShieldTarget(uint32_t& target) {
        shieldSkill.id!=weaponskills::Smite||!motionInput.shieldEquipped||motionOutput.block)return -1;
     target=shieldCast.target;shieldCast.taken=true;return 1;
 }
+// The game's Throw command for a potion release, within 400 ms of it: the cell
+// along the throw (spellaim::PotionPoint). Logged once per throw.
+bool PotionAim(float playerX,float playerY,float& x,float& y) {
+    std::lock_guard lock(mutex);
+    const auto now=GetTickCount64();
+    if(!potionThrow.valid||!potionThrow.at||now<potionThrow.at||now-potionThrow.at>400||!motionControls.load()||!motionInput.active||
+       !spellaim::PotionPoint(playerX,playerY,potionThrow.world,potionThrow.speed,x,y))return false;
+    if(!potionThrow.aimed) {
+        potionThrow.aimed=true;
+        char line[200];std::snprintf(line,sizeof line,"Frame potion throw: native Throw command aimed from %.1f,%.1f to %.1f,%.1f (%.1f cells)",
+            playerX,playerY,x,y,std::hypot(x-playerX,y-playerY));
+        Say(line);
+    }
+    return true;
+}
 bool ShieldAim(float& x,float& y) {
     std::lock_guard lock(mutex);
     if(!shieldCast.issued||shieldCast.cancelled||shieldCast.taken||!motionInput.active||motionOutput.block||motionInput.quickCast||
@@ -3050,9 +3088,9 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
             gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
         const auto shot=resolveBow(bowPending);
         if(bowflight::Allowed(shot,gate,GetTickCount64())){bowReadyShot=shot;bowHasShot=true;}
-        else if(shot.kind==bowflight::Kind::Potion||shot.kind==bowflight::Kind::Javelin) {
-            char line[200];std::snprintf(line,sizeof line,"Frame hand throw dropped: kind=%s sequence=%llu reason=release rejected in the view (valid=%d gate=%d)",
-                shot.kind==bowflight::Kind::Potion?"potion":"javelin",(unsigned long long)shot.sequence,int(bowflight::Valid(shot)),int(gate.active));
+        else if(shot.kind==bowflight::Kind::Javelin) {
+            char line[200];std::snprintf(line,sizeof line,"Frame hand throw dropped: kind=javelin sequence=%llu reason=release rejected in the view (valid=%d gate=%d)",
+                (unsigned long long)shot.sequence,int(bowflight::Valid(shot)),int(gate.active));
             Say(line);
         }
         else if(bowflight::SkillArrow(shot)) {

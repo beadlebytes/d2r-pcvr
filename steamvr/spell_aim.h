@@ -44,6 +44,24 @@ inline bool Horizontal(math::Vec direction,float& x,float& y) {
 // square with margin for movement between client resolution and server use.
 // This point encodes heading; it does not change native missile lifetime/range.
 inline constexpr float AimDistance=40.f;
+// 2026-10-19: a throwing potion is thrown by the game's own Throw command at a
+// floor cell. A real overhand throw points down at release, so the floor under
+// its line is at the feet: the hand gives a heading and a share of AimDistance
+// (inside the native command square) - faster throws reach further, steeply
+// downward ones less. The game's own range still ends the lob. speed: 0..1.
+inline float PotionReach(math::Vec direction,float speed) {
+    const float length=std::sqrt(math::Dot(direction,direction));
+    const float down=length>.001f&&std::isfinite(length)?std::clamp(-direction.y/length,0.f,1.f):0;
+    const float s=std::isfinite(speed)?std::clamp(speed,0.f,1.f):0;
+    return std::clamp((.35f+.65f*s)*(1-.7f*down*down),.1f,1.f);
+}
+inline bool PotionPoint(float x,float y,math::Vec direction,float speed,float& targetX,float& targetY) {
+    float dx=0,dy=0;
+    if(!std::isfinite(x+y)||!Horizontal(direction,dx,dy))return false;
+    const float cells=PotionReach(direction,speed)*AimDistance;
+    targetX=x+dx*cells;targetY=y+dy*cells;
+    return targetX>=1&&targetY>=1&&targetX<=65534&&targetY<=65534;
+}
 // Place a wall/prison where the tracked ray reaches the hero's floor. All
 // offsets are render-world units relative to that same hero; world X/Z are
 // doubled grid cells. A level/upward ray means six cells ahead, not an old

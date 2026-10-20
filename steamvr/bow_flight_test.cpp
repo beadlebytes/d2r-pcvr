@@ -146,31 +146,6 @@ int main() {
         }
     }
     {
-        // Player at cell 200,200, hand 1.4 m above the floor, 4 units a metre.
-        auto s=Release();s.kind=Kind::Potion;
-        Check(Valid(s)&&ProjectileLength(s)==0&&!BasicMissile(MissileId(s)),"throwing potion is valid without a missile or shaft of its own");
-        auto skill=s;skill.skill=2;Check(!Valid(skill),"throwing potion never carries a skill");
-        {const Gate gate{true,11,7,1000,42};Once once;
-         Check(Allowed(s,gate,1100)&&once.Take(s,gate,1100)&&!once.Take(s,gate,1100),"throwing potion release passes the gate and fires once");}
-        int x=0,y=0;
-        s.direction=framevr::math::Normalized(Vec{0,-.4f,-1});
-        Check(LobTarget(s,200,200,LobFar,x,y)&&x==200&&y==140,"an overhand throw pointing down still aims along its heading, not at the feet");
-        s.direction=framevr::math::Normalized(Vec{0,.6f,-.8f});
-        Check(LobTarget(s,200,200,LobFar,x,y)&&x==200&&y==140,"rising throw aims along its heading");
-        s.direction={.6f,0,.8f};Check(LobTarget(s,200,200,10.5f,x,y)&&x==206&&y==208,"distance follows the heading in cells");
-        s.direction={0,1,0};Check(LobTarget(s,200,200,LobFar,x,y)&&x==200&&y==201,"straight up never targets the start cell");
-        s.direction={0,-1,0};Check(LobTarget(s,200,200,LobFar,x,y)&&x==200&&y==201,"straight down lands at the feet, not the start cell");
-        s.direction={-1,0,0};Check(!LobTarget(s,20,200,LobFar,x,y),"a target off the map is never sent");
-        auto level=s;level.direction={0,0,-1};level.draw=1;
-        auto soft=level;soft.draw=.2f;
-        auto down=level;down.direction=framevr::math::Normalized(Vec{0,-.4f,-1});
-        auto steep=level;steep.direction={0,-1,0};
-        Check(Near(LobReach(level),1)&&LobReach(soft)<LobReach(level)&&LobReach(down)<LobReach(level),"a hard level throw takes the game's whole range; softer or downward ones less");
-        Check(LobReach(down)>.8f,"a usual overhand release still goes far");
-        Check(LobReach(steep)>=.1f&&LobReach(steep)<LobReach(down),"a throw at the feet stays short but never zero");
-        auto bad=level;bad.draw=std::numeric_limits<float>::quiet_NaN();Check(LobReach(bad)>=.1f&&LobReach(bad)<=1,"broken speed stays in range");
-    }
-    {
         // The nocked mesh must match the tracked guide even when the native
         // bow's grip/animation rig differs. Releasing starts at that same pose.
         for(float upm:{2.f,3.8899f,8.f})for(const Vec direction:{Vec{0,0,-1},Vec{1,0,0},Vec{0,1,0},Vec{0,-1,0},Vec{.6f,0,.8f}}) {

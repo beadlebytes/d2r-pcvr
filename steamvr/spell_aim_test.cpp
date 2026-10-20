@@ -129,5 +129,22 @@ int main() {
             Check(accepted(int(px)+moveX,int(py)+moveY,int(tx),int(ty)),
                   "all headings pass native validation with client/server movement margin");
     }
+    {
+        // Throwing potions: the game's Throw command at a floor cell along the throw.
+        float tx=0,ty=0;
+        const math::Vec overhand=math::Normalized(math::Vec{0,-.4f,-1});
+        Check(spellaim::PotionPoint(4000,4000,overhand,1,tx,ty)&&std::fabs(tx-4000)<.01f&&ty<4000-.8f*spellaim::AimDistance,
+              "an overhand throw pointing down still goes far along its heading, not to the feet");
+        Check(spellaim::PotionPoint(4000,4000,{0,0,-1},1,tx,ty)&&std::fabs(ty-(4000-spellaim::AimDistance))<.01f,
+              "a hard level throw takes the whole native command reach");
+        Check(4000-ty<=50&&std::fabs(tx-4000)<=50,"the target stays inside the native command square");
+        Check(spellaim::PotionReach({0,0,-1},.2f)<spellaim::PotionReach({0,0,-1},1),"a softer throw lands shorter");
+        Check(spellaim::PotionReach({0,-1,0},1)>=.1f&&spellaim::PotionReach({0,-1,0},1)<spellaim::PotionReach(overhand,1),
+              "a throw at the feet stays short but never zero");
+        Check(spellaim::PotionReach({0,0,-1},std::numeric_limits<float>::quiet_NaN())>=.1f,"broken speed stays in range");
+        Check(!spellaim::PotionPoint(4000,4000,{0,1,0},1,tx,ty)&&!spellaim::PotionPoint(4000,4000,{0,-1,0},1,tx,ty),
+              "straight up or down has no heading: the game keeps its own target");
+        Check(!spellaim::PotionPoint(10,4000,{-1,0,0},1,tx,ty),"a target off the map is never sent");
+    }
     std::puts("Spell aiming: native behavior, scoped targeting, movement-independent cast resolution and cell precision passed");
 }

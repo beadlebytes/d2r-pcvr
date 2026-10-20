@@ -34,6 +34,8 @@ bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand=0);
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample);
 bool RequestShieldSkill(const melee::Sample& sample,uint32_t target,math::Vec gridTarget);
 int TakeShieldTarget(uint32_t& target); // 1 physical target, -1 cancelled cast, 0 native fallback
+// A throwing potion release's native Throw target, in grid cells.
+bool PotionAim(float playerX,float playerY,float& x,float& y);
 bool ShieldAim(float& x,float& y);
 void FinishShieldSkill(bool accepted);
 void MeleeImpact(int hand=0); // thread-safe; haptic delivered by XR input update

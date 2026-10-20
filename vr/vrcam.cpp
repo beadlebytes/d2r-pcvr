@@ -3187,6 +3187,10 @@ bool DirectedSpellAim(float& gx,float& gy) {
         framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy);
 }
 bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
+    // A throwing potion release: the game's own Throw, at the cell along the throw.
+    if(g_enabled.load()&&!gamestate::MenuOpen()&&framevr::PotionAim(playerX,playerY,cast.x,cast.y)) {
+        cast.directed=cast.contactPoint=true;return true;
+    }
     if(framevr::spellaim::BonePlacement(framevr::NativeCastSkill())) {
         if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||!g_eyeOk.load())return false;
         float o[3],d[3];

@@ -104,8 +104,7 @@ uintptr_t Client(uintptr_t params,int flags) {
 }
 uintptr_t Server(uintptr_t game,uintptr_t params) {
     std::array<uint8_t,0x98> adjusted{};
-    int spell=bowvr::PotionParams(game,params,adjusted);
-    if(!spell)spell=bowvr::SpellParams(game,params,adjusted);
+    const int spell=bowvr::SpellParams(game,params,adjusted);
     if(spell<0)return 0;
     if(spell>0)params=reinterpret_cast<uintptr_t>(adjusted.data());
     std::array<uint8_t,0x98> boltParams{};framevr::crossbow::Launch bolt;

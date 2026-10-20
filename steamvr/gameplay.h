@@ -55,6 +55,7 @@ struct Input {
     int quickSkill=-1;
     int selectedSkill=-1,selectedOwner=-1;
     int bowSlot=-1,bowSkill=-1,bowOwner=-1;
+    int throwSlot=-1,throwSkill=-1,throwOwner=-1; // a throwing potion: the slot holding native Throw
     uint64_t skillContext=0;
     bool selectedAvailable=false,shieldEquipped=false;
 };
@@ -62,7 +63,7 @@ struct Output {
     bool attack=false, block=false, palette=false, bowDrawing=false, rayValid=false;
     bool bowReady=false, bowInReach=false, bowCharged=false;
     bool meleeContact=false,bowRelease=false,javelinRelease=false,javelinReady=false;
-    bool nativeBowRelease=false,shieldContact=false;
+    bool nativeBowRelease=false,shieldContact=false,nativeThrowRelease=false;
     float meleeSpeed=0;
     int skill=-1, potion=-1, bottle=-1; // potion is a one-shot request, not proof of consumption
     bool swap=false;
@@ -217,14 +218,19 @@ public:
                 if(released) {
                     if(in.time-throwAt>=.08&&in.time-throwAt<=3&&throwTravel>=.18f&&
                        velocityAt&&in.time-velocityAt<=.08) {
-                        out.javelinRelease=true;out.feedback=2;
+                        // 2026-10-19: a throwing potion is thrown by the game itself: one
+                        // brief press of its Throw slot, aimed by the transport (PotionAim).
+                        if(in.throwSlot>=0)out.nativeThrowRelease=skillPulse.Start(in.throwSlot,in.throwSkill,in.throwOwner,in.skillContext,in.time);
+                        else out.javelinRelease=true;
+                        out.feedback=2;
                         out.rayOrigin=in.hand[0].p;out.rayDirection=math::Normalized(throwVelocity);
                         out.draw=std::clamp(Length(throwVelocity)/5.f,0.f,1.f);
                     }
                     throwing=false;
                 }
             }
-            out.meleeContact=!trigger&&!out.javelinRelease;
+            if(in.throwSlot>=0)out.skill=skillPulse.Get(in.throwSlot,in.throwSkill,in.throwOwner,in.skillContext,in.time);
+            out.meleeContact=!trigger&&!out.javelinRelease&&out.skill<0;
             return out; // only the release spends ammunition; never hold A
         }
 

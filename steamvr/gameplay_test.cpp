@@ -133,6 +133,22 @@ int main() {
         s.in.trigger=0;
         Check(s.Step().javelinRelease==hand,"hand bindings: deliberate throw releases only when the trigger is the hand's");
     }
+    // A throwing potion: the release is one brief press of the native Throw
+    // slot (the game throws), never a mod-made javelin release.
+    for(const int slot:{0,3}) {
+        Sim s;s.in.handBindings=true;s.in.weapon=Weapon::Javelin;s.engine.Select(0);
+        s.in.selectedSkill=slot==0?weaponskills::Throw:weaponskills::Attack;s.in.selectedAvailable=true;
+        s.in.throwSlot=slot;s.in.throwSkill=weaponskills::Throw;s.in.throwOwner=-1;s.Step(3);
+        s.in.trigger=1;s.Step();
+        Check(s.out.skill<0&&!s.out.attack,"potion: holding the trigger presses nothing yet");
+        s.Move({.25f,1.55f,-.2f},10);s.Move({.25f,1.55f,-.55f},5);
+        s.in.trigger=0;s.Step();
+        Check(s.out.nativeThrowRelease&&!s.out.javelinRelease&&s.out.skill==slot&&s.out.feedback==2&&!s.out.meleeContact,
+              "potion: the release presses the Throw slot once");
+        Check(s.out.rayDirection.z<-.9f&&s.out.draw>0,"potion: the release carries the throw's heading and speed");
+        Check(s.Step().skill==slot&&!s.out.nativeThrowRelease,"potion: the press lasts long enough for the game to see it");
+        Check(s.Step(5).skill<0&&s.out.meleeContact,"potion: the press ends by itself");
+    }
     for(int kind=0;kind<4;++kind) {
         Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);s.in.trigger=1;s.Step();
         if(kind==0)s.Move({.25f,1.25f,-.45f},10); // weak reposition, not a throw

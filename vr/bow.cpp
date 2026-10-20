@@ -120,24 +120,14 @@ struct Launch {
     std::array<int,24> slots{};
 };
 thread_local Launch launch;
-// A throwing potion inside its native throw: PotionParams aims the game's own
-// missile at server creation. 2026-10-19: not in Shoot - the throw creates a
-// potion without it, aimed at the thrower's own cell (log: origin == target).
-struct PotionThrow {Shot shot{};uintptr_t game=0,player=0;int missile=-1,x=0,y=0,tx=0,ty=0,frames=0,kept=0;bool aimed=false,created=false;};
-thread_local PotionThrow potion;
-// The server potion alone is invisible: the client copy a normal throw makes in
-// its animation is skipped by the direct throw. Created for the UI thread here.
-struct PotionVisual {uint64_t session=0;int missile=-1,x=0,y=0,tx=0,ty=0;};
-std::array<PotionVisual,4> potionVisuals{};size_t potionVisualCount=0; // mutex
-// Hand throws (javelin, potion) name every drop at once, rate limited, so a
-// headset log shows where a throw went. Arrows keep the summary counters.
+// A javelin throw names every drop at once, rate limited, so a headset log
+// shows where a throw went. Arrows keep the summary counters.
 void Dropped(const Shot& s,const char* why) {
-    if(s.kind!=Kind::Potion&&s.kind!=Kind::Javelin)return;
+    if(s.kind!=Kind::Javelin)return;
     static std::atomic<uint64_t> at{0};
     const auto now=GetTickCount64();auto last=at.load();
     if(now-last<250||!at.compare_exchange_strong(last,now))return;
-    char line[160];snprintf(line,sizeof line,"Frame hand throw dropped: kind=%s sequence=%llu reason=%s",
-        s.kind==Kind::Potion?"potion":"javelin",(unsigned long long)s.sequence,why);
+    char line[160];snprintf(line,sizeof line,"Frame hand throw dropped: kind=javelin sequence=%llu reason=%s",(unsigned long long)s.sequence,why);
     framevr::logging::Write(line);
 }
 thread_local int creatingVisual=-1;
@@ -419,52 +409,6 @@ uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,
     }
     return originalShoot(game,missile,player,skill,level,extra,offsetX,offsetY,targetX,targetY,ammo);
 }
-// The game gave the potion the lifetime for LobFar cells, or its own range if
-// shorter. Keep the throw's share (LobReach), then queue the client copy
-// aimed where that lifetime ends.
-void PotionCreated(uintptr_t unit) {
-    uintptr_t path=0;int velocity=0;
-    const int frames=reinterpret_cast<int(*)(uintptr_t)>(d2rsig::Addr(FrameGetRva))(unit);
-    if(frames>0&&Read(unit+0x38,path)&&Read(path+0xa0,velocity)&&velocity>0) {
-        potion.frames=frames;potion.kept=std::max(1,int(std::lround(frames*LobReach(potion.shot))));
-        reinterpret_cast<void(*)(uintptr_t,int)>(d2rsig::Addr(FrameSetRva))(unit,potion.kept);
-        // (direction 4096 * velocity) >> 8 is 16.16 cells a tick: velocity/4096 cells.
-        LobTarget(potion.shot,potion.x,potion.y,potion.kept*velocity/4096.f,potion.tx,potion.ty);
-    }
-    std::lock_guard lock(mutex);
-    if(potionVisualCount<potionVisuals.size())
-        potionVisuals[potionVisualCount++]={potion.shot.session,potion.missile,potion.x,potion.y,potion.tx,potion.ty};
-}
-// The javelin's native throw, which spends one potion of the stack. The game
-// flies, bursts and draws its own bottle; nothing is tracked here.
-void ThrowPotion(const Shot& shot,uintptr_t game,uintptr_t player) {
-    if(gamestate::WeaponType()!=D2RVR_TYPE_POTION){++refused;Dropped(shot,"no throwing potion in the hands");return;}
-    combat::ObserveLocalPlayer(player);
-    const auto saved=potion;potion={};potion.shot=shot;potion.game=game;potion.player=player;
-    reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(ThrowRva))(game,player,2,1);
-    char line[200];
-    if(potion.aimed)snprintf(line,sizeof line,"Frame potion throw: missile=%d created=%d origin %d,%d target %d,%d (%d cells out, lifetime %d of %d ticks)",
-        potion.missile,int(potion.created),potion.x,potion.y,potion.tx,potion.ty,
-        int(std::hypot(float(potion.tx-potion.x),float(potion.ty-potion.y))),potion.kept,potion.frames);
-    else snprintf(line,sizeof line,"Frame potion throw: the native throw created no missile (stack empty, wrong mode or refused)");
-    framevr::logging::Write(line); // every throw at once: they are hand-paced
-    if(!potion.created)++refused;
-    potion=saved;
-}
-}
-// Server creation inside ThrowPotion: the potion's own missile, start, range
-// and burst, aimed along the throw (LobTarget) instead of at the skill target
-// the direct throw leaves on the thrower's own cell.
-int PotionParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjusted) {
-    if(potion.game!=game||!potion.game||potion.aimed)return 0;
-    uintptr_t owner=0;int missile=-1,xy[2]{};
-    if(!Read(params+8,owner)||owner!=potion.player||!Read(params+0x20,missile)||!Read(params+0x24,xy)||!Read(params,adjusted))return 0;
-    potion.aimed=true;potion.missile=missile;potion.x=xy[0];potion.y=xy[1];
-    if(!LobTarget(potion.shot,xy[0],xy[1],LobFar,potion.tx,potion.ty)){Dropped(potion.shot,"target off the map");return -1;}
-    Param(adjusted,0x2c,potion.tx);Param(adjusted,0x30,potion.ty);
-    return 1;
-}
-namespace {
 void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     std::array<Shot,4> batch;size_t n=0;
     {std::lock_guard lock(mutex);
@@ -496,7 +440,6 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         if(!framevr::coordinates::MatchesPlayer(p,shot.player,shot.unitsPerMetre)) {
             ++refused;++positionMismatch;Dropped(shot,"server position differs from the release");continue;
         }
-        if(shot.kind==Kind::Potion){ThrowPotion(shot,game,player);continue;}
         int level=1;
         const bool javelin=shot.kind==Kind::Javelin;
         const bool spell=shot.kind==Kind::Spell;
@@ -511,7 +454,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
            (gamestate::WeaponType()!=D2RVR_TYPE_CROSSBOW||
             reinterpret_cast<int(*)(uintptr_t,int*)>(d2rsig::Addr(MissileTypeRva))(player,&level)!=31):
            (!reinterpret_cast<int(*)(uintptr_t)>(d2rsig::Addr(IsBowRva))(player)||
-            reinterpret_cast<int(*)(uintptr_t,int*)>(d2rsig::Addr(MissileTypeRva))(player,&level)!=0))) {++refused;continue;}
+            reinterpret_cast<int(*)(uintptr_t,int*)>(d2rsig::Addr(MissileTypeRva))(player,&level)!=0))) {++refused;Dropped(shot,"no javelin in the hands");continue;}
         Launch next;next.shot=shot;next.game=game;next.player=player;
         const unsigned required=spell?framevr::spellcast::LaunchCapacity(shot.skill):1;
         {
@@ -526,7 +469,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                 usedSlots.store(std::max(usedSlots.load(std::memory_order_relaxed),size_t(next.slots[next.count-1]+1)),std::memory_order_relaxed);
             }
         }
-        if(next.slot<0){++refused;continue;}
+        if(next.slot<0){++refused;Dropped(shot,"no free projectile slot");continue;}
         combat::ObserveLocalPlayer(player);
         const auto saved=launch;launch=next;
         // Native basic attack -> Shoot checks and consumes arrows/bolts once. There
@@ -547,7 +490,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                 reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(game,player,0,1);
             }
         } else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(javelin?ThrowRva:AttackRva))(game,player,javelin?2:0,1);
-        if(!launch.created)++refused;
+        if(!launch.created){++refused;Dropped(shot,"the native throw created no missile");}
         if(crossbow)crossbowCadence.Landed(shot.session,fireAt,launch.created?crossbowCycle:100);
         if(crossbow&&launch.created){++crossbowFired;crossbowCycleMs=crossbowCycle;}
         {
@@ -662,20 +605,6 @@ void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
     const bool validHero=combat::LocalPlayerId(id)&&Read(hero,h)&&h[0]==0&&h[2]==id;
     PresentPreview(validHero?hero:0,session);
     if(!enabled.load()||!validHero)return;
-    std::array<PotionVisual,4> lobs{};size_t lobCount=0;
-    {std::lock_guard lock(mutex);lobCount=potionVisualCount;std::copy_n(potionVisuals.begin(),lobCount,lobs.begin());potionVisualCount=0;}
-    for(size_t i=0;i<lobCount;++i)if(lobs[i].session==session) {
-        // A native client missile like the one a normal throw makes: the
-        // client's own flight, travel sound and burst, never tracked here.
-        const auto& l=lobs[i];std::array<uint8_t,0x98> params{};
-        Param(params,0,uint32_t(0x21));Param(params,8,hero);Param(params,0x10,hero);Param(params,0x20,l.missile);
-        Param(params,0x24,l.x);Param(params,0x28,l.y);Param(params,0x2c,l.tx);Param(params,0x30,l.ty);
-        Param(params,0x3c,0);Param(params,0x40,1);
-        const auto client=projectiles::CreateVisual(reinterpret_cast<uintptr_t>(params.data()));
-        uint32_t header[3]{};const bool made=client&&Read(client,header)&&header[0]==3&&int(header[1])==l.missile;
-        char line[160];snprintf(line,sizeof line,"Frame potion throw: client missile=%d created=%d target %d,%d",l.missile,int(made),l.tx,l.ty);
-        framevr::logging::Write(line);
-    }
     for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
         Arrow a;
         {
@@ -887,7 +816,6 @@ void Update(const Gate& gate,uintptr_t hero) {
         if(current.session!=gate.session) {
             for(auto& a:UsedArrows())a={};
             usedSlots=0;preview={};previewReadyAt=0;previewRecovery={};clientRetirements.Reset();impactVisuals.Reset();
-            potionVisualCount=0;
             pendingCount=0;gameCallback.Cancel();uiCallback.Cancel();Recount();
         }
         current=gate;clientHero=hero;
@@ -901,7 +829,7 @@ void Update(const Gate& gate,uintptr_t hero) {
         if(uiCallback.Expired(now,500)){uiCallback.Cancel();++uiRecovered;}
         const bool needsPreview=!clientRetirements.Pending()&&((!enabled.load()&&preview.client)||previewRecovery.Due(preview.client!=0,now)||
             (enabled.load()&&preview.active&&(preview.recreate||(preview.client&&preview.missile!=MissileId(preview.pose)))));
-        bool needsVisual=potionVisualCount>0;
+        bool needsVisual=false;
         if(ready.load())for(const auto& a:UsedArrows())if(a.flight.alive&&!a.visualDone){needsVisual=true;break;}
         if(ready.load()&&(needsPreview||needsVisual)) {
             uiToken=uiCallback.Start(now);
@@ -939,10 +867,6 @@ void Submit(const Shot& shot) {
     }
 }
 void Created(uintptr_t game,uintptr_t params,uintptr_t unit) {
-    if(potion.game==game&&potion.aimed&&!potion.created) {
-        uintptr_t owner=0;
-        if(Read(params+8,owner)&&owner==potion.player){potion.created=true;PotionCreated(unit);return;}
-    }
     if(launch.slot<0||launch.created>=launch.count||launch.game!=game)return;
     uintptr_t owner=0,path=0;uint32_t h[3]{};int velocity=0;
     if(!Read(params+8,owner)||owner!=launch.player||!Read(unit,h)||h[0]!=3||h[1]!=MissileId(launch.shot)||
