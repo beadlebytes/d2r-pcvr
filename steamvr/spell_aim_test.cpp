@@ -130,21 +130,31 @@ int main() {
                   "all headings pass native validation with client/server movement margin");
     }
     {
-        // Throwing potions: the game's Throw command at a floor cell along the throw.
+        // Throwing potions: the game's Throw command at a floor cell along the
+        // throw. The angle sets the distance; speed only gates weak flicks.
+        const auto pitched=[](float degrees){const float r=degrees*.01745329252f;return math::Vec{0,std::sin(r),-std::cos(r)};};
+        const auto near=[](float a,float b){return std::fabs(a-b)<.01f;};
+        float previous=0;
+        for(float degrees=-90;degrees<=90;degrees+=2.5f) {
+            const float reach=spellaim::PotionReach(pitched(degrees),3);
+            Check(reach>=previous-1e-5f&&reach>=.1f&&reach<=1,"reach grows with the release angle and stays within 10-100%");
+            previous=reach;
+        }
+        Check(near(spellaim::PotionReach(pitched(20),3),1)&&near(spellaim::PotionReach(pitched(45),3),1),"20 degrees up or more is the whole reach");
+        Check(near(spellaim::PotionReach(pitched(0),3),.7f),"a level throw lands at 70%");
+        Check(near(spellaim::PotionReach(pitched(-15),3),.6f),"an overhand release a little down still lands at 60%");
+        Check(near(spellaim::PotionReach(pitched(-60),3),.25f)&&near(spellaim::PotionReach(pitched(-90),3),.25f),"a throw at the floor lands at 25%");
+        Check(near(spellaim::PotionReach(pitched(0),2),spellaim::PotionReach(pitched(0),6)),"a gentle 2 m/s throw goes as far as a hard one");
+        Check(near(spellaim::PotionReach(pitched(0),1.4f),.35f),"a limp flick at the gesture minimum lands at about half");
+        Check(spellaim::PotionReach(pitched(-90),.1f)>=.1f,"never below 10%");
+        Check(spellaim::PotionReach(pitched(0),std::numeric_limits<float>::quiet_NaN())>=.1f,"broken speed stays in range");
         float tx=0,ty=0;
-        const math::Vec overhand=math::Normalized(math::Vec{0,-.4f,-1});
-        Check(spellaim::PotionPoint(4000,4000,overhand,1,tx,ty)&&std::fabs(tx-4000)<.01f&&ty<4000-.8f*spellaim::AimDistance,
-              "an overhand throw pointing down still goes far along its heading, not to the feet");
-        Check(spellaim::PotionPoint(4000,4000,{0,0,-1},1,tx,ty)&&std::fabs(ty-(4000-spellaim::AimDistance))<.01f,
-              "a hard level throw takes the whole native command reach");
-        Check(4000-ty<=50&&std::fabs(tx-4000)<=50,"the target stays inside the native command square");
-        Check(spellaim::PotionReach({0,0,-1},.2f)<spellaim::PotionReach({0,0,-1},1),"a softer throw lands shorter");
-        Check(spellaim::PotionReach({0,-1,0},1)>=.1f&&spellaim::PotionReach({0,-1,0},1)<spellaim::PotionReach(overhand,1),
-              "a throw at the feet stays short but never zero");
-        Check(spellaim::PotionReach({0,0,-1},std::numeric_limits<float>::quiet_NaN())>=.1f,"broken speed stays in range");
-        Check(!spellaim::PotionPoint(4000,4000,{0,1,0},1,tx,ty)&&!spellaim::PotionPoint(4000,4000,{0,-1,0},1,tx,ty),
+        Check(spellaim::PotionPoint(4000,4000,pitched(30),8,tx,ty)&&std::fabs(tx-4000)<.01f&&near(ty,4000-spellaim::AimDistance),
+              "a full throw takes the whole native command reach along its heading");
+        Check(4000-ty<=50,"the target stays inside the native command square");
+        Check(!spellaim::PotionPoint(4000,4000,{0,1,0},3,tx,ty)&&!spellaim::PotionPoint(4000,4000,{0,-1,0},3,tx,ty),
               "straight up or down has no heading: the game keeps its own target");
-        Check(!spellaim::PotionPoint(10,4000,{-1,0,0},1,tx,ty),"a target off the map is never sent");
+        Check(!spellaim::PotionPoint(10,4000,{-1,0,0},3,tx,ty),"a target off the map is never sent");
     }
     std::puts("Spell aiming: native behavior, scoped targeting, movement-independent cast resolution and cell precision passed");
 }

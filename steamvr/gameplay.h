@@ -70,6 +70,7 @@ struct Output {
     unsigned feedback=0; // 1 select/nock, 2 attack/release, 3 drink request, 4 string nearby, 5 draw ready, 6 melee ready
     Vec rayOrigin{}, rayDirection{}, nockPoint{}, bowForward{};
     float draw=0;
+    float throwSpeed=0; // m/s at a hand throw's release
 };
 inline Vec BowForward(Pose hand) {
     // Match the existing bow grip convention: knuckles point through the bow,
@@ -225,6 +226,7 @@ public:
                         out.feedback=2;
                         out.rayOrigin=in.hand[0].p;out.rayDirection=math::Normalized(throwVelocity);
                         out.draw=std::clamp(Length(throwVelocity)/5.f,0.f,1.f);
+                        out.throwSpeed=Length(throwVelocity);
                     }
                     throwing=false;
                 }

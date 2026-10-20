@@ -293,7 +293,7 @@ ShieldCast shieldCast;
 weaponskills::Pulse shieldPulse;
 // A throwing potion's release: the game's own Throw is pressed once (gameplay
 // pulse) and aimed here, in world = grid axes, when its command resolves.
-struct PotionThrow {math::Vec world{};float speed=0;uint64_t at=0;int slot=-1;bool valid=false,aimed=false;} potionThrow;
+struct PotionThrow {math::Vec world{};float speed=0;uint64_t at=0;int slot=-1;bool valid=false,aimed=false;} potionThrow; // speed: m/s
 potionthrow::Loan potionLoan;weaponskills::Pulse potionPulse;uint64_t potionLoanSequence=0; // no slot holds Throw: lend one
 // [bow] quiver: face-button arrow skills load the following physical arrows.
 std::atomic<bool> quiverEnabled{true},quiverPreview{true};
@@ -1930,7 +1930,7 @@ void Input() {
     const auto potionNow=GetTickCount64();
     const bool potionRelease=motionOutput.nativeThrowRelease||(motionOutput.javelinRelease&&potionHeld);
     if(potionRelease&&!(motionOutput.javelinRelease&&potionLoan.Busy())) {
-        potionThrow={};potionThrow.at=potionNow;potionThrow.slot=motionInput.throwSlot;potionThrow.speed=motionOutput.draw;
+        potionThrow={};potionThrow.at=potionNow;potionThrow.slot=motionInput.throwSlot;potionThrow.speed=motionOutput.throwSpeed;
         potionThrow.valid=stageWorld.valid;
         if(stageWorld.valid)potionThrow.world=math::Rotate(stageWorld.base,motionOutput.rayDirection);
     }
@@ -1943,7 +1943,7 @@ void Input() {
     };
     if(motionOutput.nativeThrowRelease) {
         char line[200];std::snprintf(line,sizeof line,"Frame potion throw: release presses native Throw slot=%d reach=%.2f world=%d",
-            potionThrow.slot,spellaim::PotionReach(motionOutput.rayDirection,motionOutput.draw),int(potionThrow.valid));
+            potionThrow.slot,spellaim::PotionReach(motionOutput.rayDirection,motionOutput.throwSpeed),int(potionThrow.valid));
         Say(line);
     } else if(motionOutput.javelinRelease&&potionHeld) {
         // No slot holds Throw: the right trigger's slot lends it for this throw.
@@ -1955,7 +1955,7 @@ void Input() {
         else if(potionLoan.Start(slot,held.id,held.owner,gamestate::LocalPlayer(),potionNow)==potionthrow::Do::Lend) {
             bindPotionSlot(slot,potionthrow::Throw,-1);
             char line[200];std::snprintf(line,sizeof line,"Frame potion throw: automatic Throw lent to slot=%d (holds skill %d) reach=%.2f world=%d",
-                slot,held.id,spellaim::PotionReach(motionOutput.rayDirection,motionOutput.draw),int(potionThrow.valid));
+                slot,held.id,spellaim::PotionReach(motionOutput.rayDirection,motionOutput.throwSpeed),int(potionThrow.valid));
             Say(line);
         }
     }

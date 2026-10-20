@@ -45,20 +45,24 @@ inline bool Horizontal(math::Vec direction,float& x,float& y) {
 // This point encodes heading; it does not change native missile lifetime/range.
 inline constexpr float AimDistance=40.f;
 // 2026-10-19: a throwing potion is thrown by the game's own Throw command at a
-// floor cell. A real overhand throw points down at release, so the floor under
-// its line is at the feet: the hand gives a heading and a share of AimDistance
-// (inside the native command square) - faster throws reach further, steeply
-// downward ones less. The game's own range still ends the lob. speed: 0..1.
-inline float PotionReach(math::Vec direction,float speed) {
+// floor cell along the throw's heading. Throwing in VR feels weightless and
+// people hold back, so the release angle sets the distance and arm speed only
+// gates weak flicks: from 2 m/s a throw is full strength, the 1.4 m/s gesture
+// minimum about half. Pitch: +20 degrees or more is the whole AimDistance
+// (inside the native command square), level 70%, an overhand -15 degrees 60%,
+// -60 degrees and below 25%. The game's own range still ends the lob.
+inline float PotionReach(math::Vec direction,float metresPerSecond) {
     const float length=std::sqrt(math::Dot(direction,direction));
-    const float down=length>.001f&&std::isfinite(length)?std::clamp(-direction.y/length,0.f,1.f):0;
-    const float s=std::isfinite(speed)?std::clamp(speed,0.f,1.f):0;
-    return std::clamp((.35f+.65f*s)*(1-.7f*down*down),.1f,1.f);
+    const float pitch=length>.001f&&std::isfinite(length)?std::asin(std::clamp(direction.y/length,-1.f,1.f))*57.29578f:0;
+    const float angle=pitch>=20?1:pitch>=0?.7f+.3f*pitch/20:pitch>=-15?.7f+.1f*pitch/15:
+        pitch>=-60?.6f+.35f*(pitch+15)/45:.25f;
+    const float speed=std::isfinite(metresPerSecond)?std::clamp(.5f+(metresPerSecond-1.4f)/1.2f,0.f,1.f):1;
+    return std::clamp(angle*speed,.1f,1.f);
 }
-inline bool PotionPoint(float x,float y,math::Vec direction,float speed,float& targetX,float& targetY) {
+inline bool PotionPoint(float x,float y,math::Vec direction,float metresPerSecond,float& targetX,float& targetY) {
     float dx=0,dy=0;
     if(!std::isfinite(x+y)||!Horizontal(direction,dx,dy))return false;
-    const float cells=PotionReach(direction,speed)*AimDistance;
+    const float cells=PotionReach(direction,metresPerSecond)*AimDistance;
     targetX=x+dx*cells;targetY=y+dy*cells;
     return targetX>=1&&targetY>=1&&targetX<=65534&&targetY<=65534;
 }
