@@ -36,6 +36,7 @@
 #include "window_focus.h"
 #include "gameplay.h"
 #include "spell_aim.h"
+#include "potion_throw.h"
 #include "hand_controls.h"
 #include "interaction_ui.h"
 #include "sewer_prompt_art.h"
@@ -293,6 +294,7 @@ weaponskills::Pulse shieldPulse;
 // A throwing potion's release: the game's own Throw is pressed once (gameplay
 // pulse) and aimed here, in world = grid axes, when its command resolves.
 struct PotionThrow {math::Vec world{};float speed=0;uint64_t at=0;int slot=-1;bool valid=false,aimed=false;} potionThrow;
+potionthrow::Loan potionLoan;weaponskills::Pulse potionPulse;uint64_t potionLoanSequence=0; // no slot holds Throw: lend one
 // [bow] quiver: face-button arrow skills load the following physical arrows.
 std::atomic<bool> quiverEnabled{true},quiverPreview{true};
 weaponskills::Quiver quiver;
@@ -1925,16 +1927,67 @@ void Input() {
     skel::SetMotionBow(motionInput.active&&motionOutput.bowReady,motionOutput.bowDrawing,motionOutput.draw,s.rightHand,s.leftHand,s.sampleStamp);
     if(!motionInput.active||(!motionOutput.bowReady&&!motionOutput.javelinReady))bowNeedsWorld=bowHasShot=false;
     const bool potionHeld=gamestate::WeaponType()==D2RVR_TYPE_POTION;
-    if(motionOutput.nativeThrowRelease) {
-        potionThrow={};potionThrow.at=GetTickCount64();potionThrow.slot=motionInput.throwSlot;potionThrow.speed=motionOutput.draw;
+    const auto potionNow=GetTickCount64();
+    const bool potionRelease=motionOutput.nativeThrowRelease||(motionOutput.javelinRelease&&potionHeld);
+    if(potionRelease&&!(motionOutput.javelinRelease&&potionLoan.Busy())) {
+        potionThrow={};potionThrow.at=potionNow;potionThrow.slot=motionInput.throwSlot;potionThrow.speed=motionOutput.draw;
         potionThrow.valid=stageWorld.valid;
         if(stageWorld.valid)potionThrow.world=math::Rotate(stageWorld.base,motionOutput.rayDirection);
+    }
+    // One native binding request: slot's skill -> skill/owner, from what it holds now.
+    const auto bindPotionSlot=[&](int slot,int skill,int owner) {
+        interaction::Request r;r.action=interaction::Action::BindSkill;r.sequence=(1ull<<62)|++potionLoanSequence;
+        r.session=gamestate::LocalPlayer();r.at=potionNow;r.index=slot;r.skill=skill;r.skillOwner=owner;
+        r.bank=quickSnapshot.bindingBank;r.previousSkill=quickSnapshot.skills[slot].id;r.previousOwner=quickSnapshot.skills[slot].owner;
+        interactionstate::Request(r);
+    };
+    if(motionOutput.nativeThrowRelease) {
         char line[200];std::snprintf(line,sizeof line,"Frame potion throw: release presses native Throw slot=%d reach=%.2f world=%d",
             potionThrow.slot,spellaim::PotionReach(motionOutput.rayDirection,motionOutput.draw),int(potionThrow.valid));
         Say(line);
+    } else if(motionOutput.javelinRelease&&potionHeld) {
+        // No slot holds Throw: the right trigger's slot lends it for this throw.
+        const int slot=skills::TriggerSlot(0);
+        const auto& held=quickSnapshot.skills[slot];
+        if(potionLoan.Busy())Say("Frame hand throw dropped: kind=potion reason=the previous automatic Throw is still rebinding");
+        else if(!quickFresh||!quickSnapshot.bindingsEditable||!held.known)
+            Say("Frame hand throw dropped: kind=potion reason=skill bindings not readable for an automatic Throw");
+        else if(potionLoan.Start(slot,held.id,held.owner,gamestate::LocalPlayer(),potionNow)==potionthrow::Do::Lend) {
+            bindPotionSlot(slot,potionthrow::Throw,-1);
+            char line[200];std::snprintf(line,sizeof line,"Frame potion throw: automatic Throw lent to slot=%d (holds skill %d) reach=%.2f world=%d",
+                slot,held.id,spellaim::PotionReach(motionOutput.rayDirection,motionOutput.draw),int(potionThrow.valid));
+            Say(line);
+        }
     }
-    if(motionOutput.javelinRelease&&potionHeld)
-        Say("Frame hand throw dropped: kind=potion reason=no skill slot holds Throw - bind Throw (listed while a throwing potion is held), e.g. to the right trigger");
+    if(potionLoan.Busy()) {
+        const int slot=potionLoan.slot;
+        const auto& held=quickSnapshot.skills[slot];
+        const bool fresh=quickFresh&&quickSnapshot.session==potionLoan.session&&held.known;
+        const bool abort=!motionControls.load()||!motionInput.active||motionInput.cancel||!potionHeld;
+        const auto step=potionLoan.Update(potionNow,fresh,held.id,held.owner,abort,gamestate::LocalPlayer()!=potionLoan.session,potionThrow.aimed);
+        char line[200];line[0]=0;
+        switch(step) {
+            case potionthrow::Do::Press:
+                potionPulse.Start(slot,potionthrow::Throw,held.owner,motionInput.skillContext,motionInput.time);
+                potionThrow.at=potionNow;potionThrow.aimed=false;
+                std::snprintf(line,sizeof line,"Frame potion throw: automatic Throw bound to slot=%d, pressing",slot);break;
+            case potionthrow::Do::Return:
+                bindPotionSlot(slot,potionLoan.skill,potionLoan.owner);
+                if(potionLoan.tries==1)std::snprintf(line,sizeof line,"Frame potion throw: automatic Throw %s, restoring skill %d to slot=%d",
+                    potionThrow.aimed?"thrown":abort?"cancelled":"unused",potionLoan.skill,slot);
+                break;
+            case potionthrow::Do::Restored:
+                std::snprintf(line,sizeof line,"Frame potion throw: automatic Throw done (thrown=%d), restored skill %d to slot=%d",int(potionThrow.aimed),held.id,slot);break;
+            case potionthrow::Do::GiveUp:
+                std::snprintf(line,sizeof line,"Frame potion throw: automatic Throw ended with the character session (slot=%d)",slot);break;
+            default:break;
+        }
+        if(line[0])Say(line);
+        if(potionLoan.step==potionthrow::Loan::Step::Pressing) {
+            const int pressed=potionPulse.Get(slot,potionthrow::Throw,held.owner,motionInput.skillContext,motionInput.time);
+            if(pressed>=0){motionOutput.skill=pressed;motionOutput.meleeContact=false;}
+        }
+    }
     if(motionOutput.bowRelease||(motionOutput.javelinRelease&&!potionHeld)) {
         bowPending={};bowPending.origin=motionInput.hand[0].p;bowPending.direction=motionOutput.rayDirection;
         if(motionOutput.javelinRelease) {

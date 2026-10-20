@@ -117,6 +117,7 @@ add_executable(skill-pad-test skill_pad_test.cpp)
 add_executable(interact-press-test interact_press_test.cpp)
 add_executable(mod-layout-test mod_layout_test.cpp)
 add_executable(spell-aim-test spell_aim_test.cpp)
+add_executable(potion-throw-test potion_throw_test.cpp)
 add_executable(bow-pose-test bow_pose_test.cpp)
 add_executable(crossbow-pose-test crossbow_pose_test.cpp ${ROOT}/vr/crossbow.cpp)
 target_include_directories(crossbow-pose-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT}/shared)
@@ -268,7 +269,7 @@ set_tests_properties(arcane-sky-test PROPERTIES TIMEOUT 30)
 add_test(NAME light-bounds-test COMMAND light-bounds-test)
 set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
-    gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test sewer-interaction-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test body-calibration-test shoulder-swap-test blood-screen-test
+    gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test sewer-interaction-test mod-layout-test spell-aim-test potion-throw-test bow-pose-test crossbow-pose-test body-tracking-test body-calibration-test shoulder-swap-test blood-screen-test
     portal-billboard-test shrine-trace-test shrine-placement-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test
     combat-rules-test shield-guard-test guard-strain-test heartbeat-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
     interaction-test dev-scenarios-test native-belt-test wrist-hud-test navigation-info-test companions-test active-effects-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
