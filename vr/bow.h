@@ -26,6 +26,8 @@ bool PlayHeroSound(int sound);
 bool SpellTarget(uintptr_t game,uintptr_t player,int* x,int* y);
 // 0: unrelated request; 1: copied/adjusted; -1: reject before native creation.
 int SpellParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjusted);
+// The same for a throwing potion inside its native throw: aims it at the thrown cell.
+int PotionParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjusted);
 void Created(uintptr_t game,uintptr_t params,uintptr_t unit);
 bool AdoptCrossbow(uintptr_t game,uintptr_t unit,const framevr::bowflight::Shot& shot);
 void CrossbowClient(uintptr_t unit,const framevr::bowflight::Shot& shot);

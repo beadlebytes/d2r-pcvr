@@ -3050,6 +3050,11 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
             gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
         const auto shot=resolveBow(bowPending);
         if(bowflight::Allowed(shot,gate,GetTickCount64())){bowReadyShot=shot;bowHasShot=true;}
+        else if(shot.kind==bowflight::Kind::Potion||shot.kind==bowflight::Kind::Javelin) {
+            char line[200];std::snprintf(line,sizeof line,"Frame hand throw dropped: kind=%s sequence=%llu reason=release rejected in the view (valid=%d gate=%d)",
+                shot.kind==bowflight::Kind::Potion?"potion":"javelin",(unsigned long long)shot.sequence,int(bowflight::Valid(shot)),int(gate.active));
+            Say(line);
+        }
         else if(bowflight::SkillArrow(shot)) {
             char line[200];std::snprintf(line,sizeof line,"Frame bow quiver: release rejected skill=%d missile=%d valid=%d",
                 shot.skill,shot.missile,int(bowflight::Valid(shot)));

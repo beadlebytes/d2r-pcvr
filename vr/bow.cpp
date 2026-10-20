@@ -120,10 +120,22 @@ struct Launch {
     std::array<int,24> slots{};
 };
 thread_local Launch launch;
-// A throwing potion inside its native throw: Shoot aims the game's own missile.
-struct PotionThrow {Shot shot{};uintptr_t game=0,player=0;int missile=-1,cells=0;bool aimed=false;};
+// A throwing potion inside its native throw: PotionParams aims the game's own
+// missile at server creation. 2026-10-19: not in Shoot - the throw creates a
+// potion without it, aimed at the thrower's own cell (log: origin == target).
+struct PotionThrow {Shot shot{};uintptr_t game=0,player=0;int missile=-1,x=0,y=0,tx=0,ty=0;bool aimed=false,created=false;};
 thread_local PotionThrow potion;
-std::atomic<unsigned> potionThrows{0};std::atomic<int> potionMissile{-1},potionCells{0};
+// Hand throws (javelin, potion) name every drop at once, rate limited, so a
+// headset log shows where a throw went. Arrows keep the summary counters.
+void Dropped(const Shot& s,const char* why) {
+    if(s.kind!=Kind::Potion&&s.kind!=Kind::Javelin)return;
+    static std::atomic<uint64_t> at{0};
+    const auto now=GetTickCount64();auto last=at.load();
+    if(now-last<250||!at.compare_exchange_strong(last,now))return;
+    char line[160];snprintf(line,sizeof line,"Frame hand throw dropped: kind=%s sequence=%llu reason=%s",
+        s.kind==Kind::Potion?"potion":"javelin",(unsigned long long)s.sequence,why);
+    framevr::logging::Write(line);
+}
 thread_local int creatingVisual=-1;
 thread_local uint64_t visualSession=0,visualSequence=0;
 thread_local uint64_t previewCreatingSession=0;
@@ -175,12 +187,17 @@ bool Position(uintptr_t unit,Vec& out) {
     if(!Read(unit+0x38,path)||!Read(path,p))return false;
     out={2*(p[1]+p[0]/65536.f),0,2*(p[3]+p[2]/65536.f)};return true;
 }
-bool Live(const Shot& s) {
+// Why a release can no longer fire, or nullptr while it still can.
+const char* Unlive(const Shot& s) {
     Gate gate;{std::lock_guard lock(mutex);gate=current;}
-    return enabled.load()&&ready.load()&&Allowed(s,gate,GetTickCount64())&&
-        s.session==gamestate::LocalPlayer()&&!gamestate::MenuOpen()&&
-        s.equipment==(gamestate::HandsKey()^(gamestate::WeaponSet()<<30));
+    if(!enabled.load()||!ready.load())return "physical projectiles off or hooks not ready";
+    if(!Allowed(s,gate,GetTickCount64()))return Valid(s)?"stale or gate closed (menu, view, tracking, recenter, equipment)":"invalid release";
+    if(s.session!=gamestate::LocalPlayer())return "character session changed";
+    if(gamestate::MenuOpen())return "menu open";
+    if(s.equipment!=(gamestate::HandsKey()^(gamestate::WeaponSet()<<30)))return "equipment changed";
+    return nullptr;
 }
+bool Live(const Shot& s) {return !Unlive(s);}
 bool Same(const Arrow& a,const Arrow& b) {
     return a.flight.shot.kind==b.flight.shot.kind&&a.flight.shot.session==b.flight.shot.session&&a.flight.shot.sequence==b.flight.shot.sequence&&
         a.flight.shot.member==b.flight.shot.member;
@@ -382,17 +399,6 @@ int Collision(uintptr_t game,uintptr_t unit) {
 }
 uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,int extra,
                 int offsetX,int offsetY,int targetX,int targetY,int ammo) {
-    if(potion.game==game&&potion.player==player&&!potion.aimed) {
-        // Native start, flight, range and burst; only the cell the throw chose.
-        Vec p{};
-        if(!Position(player,p))return 0; // before native costs
-        const int x=int(p.x*.5f),y=int(p.z*.5f);
-        if(!LobTarget(potion.shot,x,y,targetX,targetY))return 0;
-        potion.aimed=true;
-        const auto unit=originalShoot(game,missile,player,skill,level,extra,offsetX,offsetY,targetX,targetY,ammo);
-        if(unit){potion.missile=missile;potion.cells=int(std::hypot(float(targetX-x),float(targetY-y)));}
-        return unit;
-    }
     if(launch.slot>=0&&launch.game==game&&launch.player==player) {
         if(missile!=int(MissileId(launch.shot)))return 0; // before native costs
         Vec p{};if(!Position(player,p))return 0;
@@ -412,14 +418,33 @@ uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,
 // The javelin's native throw, which spends one potion of the stack. The game
 // creates and draws its own lobbed bottle; nothing is tracked or drawn here.
 void ThrowPotion(const Shot& shot,uintptr_t game,uintptr_t player) {
-    if(gamestate::WeaponType()!=D2RVR_TYPE_POTION){++refused;return;}
+    if(gamestate::WeaponType()!=D2RVR_TYPE_POTION){++refused;Dropped(shot,"no throwing potion in the hands");return;}
     combat::ObserveLocalPlayer(player);
     const auto saved=potion;potion={};potion.shot=shot;potion.game=game;potion.player=player;
     reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(ThrowRva))(game,player,2,1);
-    if(potion.missile>=0){++potionThrows;potionMissile=potion.missile;potionCells=potion.cells;}
-    else ++refused;
+    char line[200];
+    if(potion.aimed)snprintf(line,sizeof line,"Frame potion throw: missile=%d created=%d origin %d,%d target %d,%d (%d cells out)",
+        potion.missile,int(potion.created),potion.x,potion.y,potion.tx,potion.ty,
+        int(std::hypot(float(potion.tx-potion.x),float(potion.ty-potion.y))));
+    else snprintf(line,sizeof line,"Frame potion throw: the native throw created no missile (stack empty, wrong mode or refused)");
+    framevr::logging::Write(line); // every throw at once: they are hand-paced
+    if(!potion.created)++refused;
     potion=saved;
 }
+}
+// Server creation inside ThrowPotion: the potion's own missile, start, range
+// and burst, aimed at the cell the throw chose (LobTarget) instead of the
+// skill target the direct throw leaves on the thrower's own cell.
+int PotionParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjusted) {
+    if(potion.game!=game||!potion.game||potion.aimed)return 0;
+    uintptr_t owner=0;int missile=-1,xy[2]{};
+    if(!Read(params+8,owner)||owner!=potion.player||!Read(params+0x20,missile)||!Read(params+0x24,xy)||!Read(params,adjusted))return 0;
+    potion.aimed=true;potion.missile=missile;potion.x=xy[0];potion.y=xy[1];
+    if(!LobTarget(potion.shot,xy[0],xy[1],potion.tx,potion.ty)){Dropped(potion.shot,"target off the map");return -1;}
+    Param(adjusted,0x2c,potion.tx);Param(adjusted,0x30,potion.ty);
+    return 1;
+}
+namespace {
 void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     std::array<Shot,4> batch;size_t n=0;
     {std::lock_guard lock(mutex);
@@ -438,7 +463,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     }
     for(size_t i=0;i<n;++i) {
         auto shot=batch[i];
-        if(!Live(shot)){++stale;continue;}
+        if(const char* why=Unlive(shot)){++stale;Dropped(shot,why);continue;}
         const bool crossbow=shot.kind==Kind::Crossbow;
         const auto fireAt=GetTickCount64();uint32_t crossbowCycle=1000;
         if(crossbow) {
@@ -447,9 +472,9 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         }
         uintptr_t game=0,player=0;Vec p{};uint32_t mode=0;
         if(!melee::LocalServer(game,player)||!Read(player+0xc,mode)||mode==0||mode==17||mode==5||mode==6||
-           !Position(player,p)) {++refused;continue;}
+           !Position(player,p)) {++refused;Dropped(shot,"no local server player, or dead, in town or unplaced");continue;}
         if(!framevr::coordinates::MatchesPlayer(p,shot.player,shot.unitsPerMetre)) {
-            ++refused;++positionMismatch;continue;
+            ++refused;++positionMismatch;Dropped(shot,"server position differs from the release");continue;
         }
         if(shot.kind==Kind::Potion){ThrowPotion(shot,game,player);continue;}
         int level=1;
@@ -862,22 +887,27 @@ void Submit(const Shot& shot) {
         std::lock_guard lock(mutex);
         if(shot.kind==Kind::Spell&&(shot.hand<0||shot.hand>1))return;
         auto& dedupe=shot.kind==Kind::Spell?spellOnce[shot.hand]:shot.kind==Kind::Crossbow?crossbowOnce:once;
-        if(!ready.load()||!enabled.load()||!dedupe.Take(shot,current,GetTickCount64())){++stale;return;}
+        if(!ready.load()||!enabled.load()){++stale;Dropped(shot,"physical projectiles off or hooks not ready");return;}
+        if(!dedupe.Take(shot,current,GetTickCount64())){++stale;Dropped(shot,Allowed(shot,current,GetTickCount64())?"repeated release":Valid(shot)?"stale or gate closed (menu, view, tracking, recenter, equipment)":"invalid release");return;}
         // Held spell input is a latest-pose request, never a backlog of casts.
         if(shot.kind==Kind::Spell)for(size_t i=0;i<pendingCount;++i)
             if(pending[i].kind==Kind::Spell&&pending[i].hand==shot.hand){pending[i]=shot;return;}
         // A held trigger supplies current aim, not a queue of delayed bolts.
         if(shot.kind==Kind::Crossbow)for(size_t i=0;i<pendingCount;++i)
             if(pending[i].kind==Kind::Crossbow){pending[i]=shot;return;}
-        if(pendingCount==pending.size()){++refused;return;}
+        if(pendingCount==pending.size()){++refused;Dropped(shot,"release queue full");return;}
         pending[pendingCount++]=shot;++submitted;
         token=gameCallback.Start(GetTickCount64());
     }
     if(token&&threads->runOnGameThread(context,&Apply,reinterpret_cast<void*>(token))!=D2RL::Threads::Result::Success) {
-        std::lock_guard lock(mutex);if(gameCallback.Claim(token))pendingCount=0;++refused;
+        std::lock_guard lock(mutex);if(gameCallback.Claim(token))pendingCount=0;++refused;Dropped(shot,"game thread refused the callback");
     }
 }
 void Created(uintptr_t game,uintptr_t params,uintptr_t unit) {
+    if(potion.game==game&&potion.aimed&&!potion.created) {
+        uintptr_t owner=0;
+        if(Read(params+8,owner)&&owner==potion.player){potion.created=true;return;}
+    }
     if(launch.slot<0||launch.created>=launch.count||launch.game!=game)return;
     uintptr_t owner=0,path=0;uint32_t h[3]{};int velocity=0;
     if(!Read(params+8,owner)||owner!=launch.player||!Read(unit,h)||h[0]!=3||h[1]!=MissileId(launch.shot)||
@@ -1132,10 +1162,6 @@ void Report() {
         framevr::logging::Write(line);
     }
     spellvr::Report();
-    if(const auto count=potionThrows.exchange(0)) {
-        char line[144];snprintf(line,sizeof line,"Frame potion throw: native throws=%u, last missile=%d aimed %d cells out",count,potionMissile.load(),potionCells.load());
-        framevr::logging::Write(line);
-    }
     {
         const auto shots=quiverShots.exchange(0),fallbacks=quiverFallbacks.exchange(0),refusedStart=quiverRefused.exchange(0);
         if(shots||fallbacks||refusedStart) {

@@ -150,6 +150,8 @@ int main() {
         auto s=Release();s.kind=Kind::Potion;
         Check(Valid(s)&&ProjectileLength(s)==0&&!BasicMissile(MissileId(s)),"throwing potion is valid without a missile or shaft of its own");
         auto skill=s;skill.skill=2;Check(!Valid(skill),"throwing potion never carries a skill");
+        {const Gate gate{true,11,7,1000,42};Once once;
+         Check(Allowed(s,gate,1100)&&once.Take(s,gate,1100)&&!once.Take(s,gate,1100),"throwing potion release passes the gate and fires once");}
         int x=0,y=0;Vec floor{};
         s.direction=framevr::math::Normalized(Vec{0,-1,-1});
         Check(FloorPoint(s,floor)&&Near(floor.z,98.6f)&&Near(floor.y,0),"downward throw lands where it meets the floor");
