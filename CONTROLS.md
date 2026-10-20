@@ -69,7 +69,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Reset height | VR Settings > Reset eye height |
 | Adjust controller vibration | **VR Settings > Haptics**: overall strength plus separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths. Tests match each action's hands; **Apply** saves |
 | Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
-| Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
+| Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped. Point at an item (arm out) or look at it to choose which one; it glows in its rarity colour |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
 | Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon or Assassin claw works; ordinary button interaction/kicking remains available |
@@ -103,6 +103,16 @@ Interact latches the target present when you press A. Pressing at empty space
 does not wait for an item to come into range. Release and press again for each
 new target. A release during an inventory/NPC menu rearms interaction; holding
 the button through a menu or game-session change cannot reuse the old target.
+
+With several items on the floor, Interact takes the one you choose, not the
+nearest: point at it with the right arm held out, or with the arm resting just
+look at it. That item glows along its outline in its rarity colour, and its name,
+when shown, gets a matching frame. It glows steady red when it is farther than the
+pick-up reach (5.5 cells); A then leaves it alone and does not walk there. Doors,
+chests, waypoints and NPCs work as before. INI only (`d2r_pcvr.ini`):
+`[interactions] loot_pick=0` restores the game's nearest-item pick,
+`loot_highlight=0` hides the glow and frame, and `loot_pick_reach_cells` sets the
+reach (0 = any distance). Details are in [GAMEPLAY.md](steamvr/GAMEPLAY.md).
 
 On the **VR** settings tab, **Smooth turning** defaults to **Off** (30-degree
 snap turns). Turn it **On**, then **Apply**, for continuous right-stick turning.

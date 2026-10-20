@@ -1794,6 +1794,11 @@ uniform float3 OutlineColor < hidden = true; > = float3(1.0, 0.2, 0.12);
 uniform float OutlineWidth < hidden = true; > = 1.0;   // how far out a neighbour is looked for, in pixels: the edge's thickness
 uniform float OutlineJump < hidden = true; > = 6.0;    // a neighbour this close in 3D still belongs to the body (world units)
 uniform float OutlineInner < hidden = true; > = 0.05;  // a faint tint over the whole body, a share of the strength
+// Loot highlight: the same edge round the dropped item Interact acts on, in its
+// rarity colour, as added light (a glow, not paint). ItemOutlinePos as OutlinePos.
+uniform float4 ItemOutlinePos < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float3 ItemOutlineShape < hidden = true; > = float3(1.6, 0.03, 2.0);
+uniform float3 ItemOutlineColor < hidden = true; > = float3(1.0, 1.0, 1.0);
 
 // The world point (relative to the hero) the eye sees at uv; ok = 0 for the sky.
 float3 OutlineWorld(float2 uv, int eye, out float ok)
@@ -1841,13 +1846,34 @@ float3 OutlineTint(float3 c, float2 uv, int eye, float3 p, float4 o, float3 shap
     const float a = max(saturate(edge / 3.0), OutlineInner) * o.w;
     return lerp(c, colour, saturate(a));   // painted over the picture: subtle at low strength
 }
+// An item is small: neighbours 2 and 5 pixels out (a soft double line), a body
+// that breaks at half the search radius, and only height edges inside the
+// cylinder - its own boundary drew a circle round items standing in grass.
+float3 ItemOutlineTint(float3 c, float2 uv, int eye, float3 p, float4 o, float3 shape, float3 colour)
+{
+    if (o.w <= 0.0 || length(p.xz - o.xz) > shape.x) return c;
+    if (Raised(p, o, shape) <= 0.0) return c;
+    const float jump = shape.x * 0.5;
+    float edge = 0.0;
+    [unroll] for (int k = 0; k < 8; ++k) {
+        [unroll] for (int s = 0; s < 2; ++s) {
+            float ok;
+            const float3 q = OutlineWorld(uv + kOutlineDirs[k] * float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT) * (s == 0 ? 2.0 : 5.0), eye, ok);
+            const float model = ok * Raised(q, o, shape) * max(Near(q, ok, o, shape), step(length(q - p), jump));
+            edge += (1.0 - model) * (s == 0 ? 1.0 : 0.5);
+        }
+    }
+    const float a = saturate(edge / 3.0) * o.w;
+    return saturate(c + colour * a * 1.3);   // added light: a glow, not paint
+}
 float3 Outline(float2 uv, int eye)
 {
-    const float3 c = tex2D(FogColorSmp, uv).rgb;
+    float3 c = tex2D(FogColorSmp, uv).rgb;
     if (!OutlineOn) return c;
     float ok;
     const float3 p = OutlineWorld(uv, eye, ok);
     if (ok <= 0.0) return c;
+    c = ItemOutlineTint(c, uv, eye, p, ItemOutlinePos, ItemOutlineShape, ItemOutlineColor);
     return OutlineTint(c, uv, eye, p, OutlinePos, OutlineShape, OutlineColor);
 }
 float3 PS_Outline(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Outline(uv, 0); }
