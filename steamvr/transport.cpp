@@ -1943,7 +1943,7 @@ void Input() {
     };
     if(motionOutput.nativeThrowRelease) {
         char line[200];std::snprintf(line,sizeof line,"Frame potion throw: release presses native Throw slot=%d reach=%.2f world=%d",
-            potionThrow.slot,spellaim::PotionReach(motionOutput.rayDirection,motionOutput.throwSpeed),int(potionThrow.valid));
+            potionThrow.slot,spellaim::PotionReach(motionOutput.throwSpeed),int(potionThrow.valid));
         Say(line);
     } else if(motionOutput.javelinRelease&&potionHeld) {
         // No slot holds Throw: the right trigger's slot lends it for this throw.
@@ -1955,7 +1955,7 @@ void Input() {
         else if(potionLoan.Start(slot,held.id,held.owner,gamestate::LocalPlayer(),potionNow)==potionthrow::Do::Lend) {
             bindPotionSlot(slot,potionthrow::Throw,-1);
             char line[200];std::snprintf(line,sizeof line,"Frame potion throw: automatic Throw lent to slot=%d (holds skill %d) reach=%.2f world=%d",
-                slot,held.id,spellaim::PotionReach(motionOutput.rayDirection,motionOutput.throwSpeed),int(potionThrow.valid));
+                slot,held.id,spellaim::PotionReach(motionOutput.throwSpeed),int(potionThrow.valid));
             Say(line);
         }
     }
