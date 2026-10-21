@@ -376,6 +376,7 @@ struct Input {
     vitals::Location vitalsLocation=vitals::Location::Wrist;
     float vitalsTilt=0;
     bool criticalAlerts=false,leftCasting=false;
+    bool runToggle=false; // right stick double tap up, already gated to plain gameplay
     bool floorKnown=false; float floor=0; // room-space height of the world ground under the player
     Stage stage{};
     Pose head{},hand[2]{};
@@ -427,7 +428,7 @@ class Engine {
     uint64_t session=0,epoch=0,sequence=0;
     double lastTime=0,drinkStart=0,pendingAt=0,resultAt=0,criticalUntil=0,criticalAgain=0;
     bool primed=false,triggerWas=false,gripWas[2]{},wheelLatch=false,utility=false,map=false,rearm=true,stowed=false;
-    bool spent=false,consumed=false;
+    bool spent=false,consumed=false,quietReply=false;
     Owner owner[2]{Owner::Combat,Owner::Combat};
     int bottle=-1,bottleHand=-1,holster=-1,holsterHand=-1,pendingHand=0;
     Pose body{};
@@ -553,6 +554,7 @@ public:
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
                 result=in.reply.result;resultAt=in.time;out.feedback=(result==Result::Applied||result==Result::Dispatched||result==Result::DebugUpdated||result==Result::TurnsUpdated)?2:3;
                 out.feedbackHand=pendingHand;
+                if(quietReply&&out.feedback==2)out.feedback=0; // the stick tap already pulsed
                 if(result==Result::Applied&&pending.action==Action::Equip)stowed=false;
                 if(result==Result::Applied&&pending.action==Action::Potion&&pending.item==held.item)consumed=true;
                 if(result==Result::Applied&&pending.action==Action::BindItem&&editor==3){editor=0;rearm=true;}
@@ -570,9 +572,12 @@ public:
         out.critical=low&&in.time<criticalUntil;
         auto request=[&](Action a,int index,Item item={},uint32_t revision=0) {
             if(pending.action!=Action::None)return false;
-            pending={a,++sequence,session,now,index,item,revision};pendingAt=in.time;pendingHand=0;
+            pending={a,++sequence,session,now,index,item,revision};pendingAt=in.time;pendingHand=0;quietReply=false;
             out.request=pending;result=Result::Pending;return true;
         };
+        // The wheel's RUN / WALK command from the right stick. The transport
+        // pulses on the tap itself, so only a refusal answers.
+        if(in.runToggle&&!in.wheel&&!in.cancel&&fresh&&request(Action::RunWalk,0))quietReply=true;
         // Follow even with lowered hands or a held bottle: proximity must not
         // leave the belt behind as the player turns, steps or crouches.
         body=UprightBody(in.head,body.q);

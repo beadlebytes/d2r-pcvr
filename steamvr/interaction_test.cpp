@@ -77,6 +77,21 @@ int main(){
         for(auto page:{MenuPage::Map,MenuPage::Developer,MenuPage::EditSlots,MenuPage::EditSkills,MenuPage::EditItems})
             Check(WheelCell(.1f,.1f,-1,page,1)!=QuickUseCell,"hidden quick control never intercepts another page");
     }
+    {
+        Sim s;s.in.runToggle=true;s.Step();
+        Check(s.out.request.action==Action::RunWalk&&!s.out.wheel,"stick double tap sends the wheel's run/walk command");
+        s.in.runToggle=false;s.in.reply={s.out.request.sequence,s.in.session,Result::Applied};
+        Check(!s.Step().feedback,"an applied stick toggle adds no second pulse");
+        s.in.runToggle=true;s.Step();s.in.runToggle=false;s.in.reply={s.out.request.sequence,s.in.session,Result::Refused};
+        Check(s.Step().feedback==3,"a refused stick toggle still answers");
+        s.in.reply={};s.Step();quick(s);s.in.runToggle=true;
+        Check(s.Step().request.action==Action::None,"no stick toggle while a wheel is held");
+        Sim stale;stale.in.runToggle=true;stale.in.snapshot.session=11;
+        Check(stale.Step().request.action==Action::None,"no stick toggle without a fresh snapshot");
+        Sim wheel;quick(wheel);wheel.in.hover=RunWalkCell;wheel.in.trigger=1;wheel.Step();
+        wheel.in.reply={wheel.out.request.sequence,wheel.in.session,Result::Applied};
+        Check(wheel.Step().feedback==2,"the wheel's run/walk keeps its confirmation pulse");
+    }
 
     {
         Sim s;s.in.wheel=true;s.Step(3);s.in.hover=13;s.in.trigger=1;s.Step();

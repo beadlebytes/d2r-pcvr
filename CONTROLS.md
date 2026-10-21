@@ -60,7 +60,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Assign a button | Opposite hand's laser + trigger: select a wedge, then a skill |
 | Use an inventory item | Either wheel > **QUICK USE**: point with the opposite hand and briefly click its trigger; use happens on release |
 | Assign / change quick-use item | Hold the trigger over **QUICK USE** for 0.65 seconds, then select a carried scroll, tome or other usable item. An empty slot also opens the picker on a short click. **CLEAR SLOT** removes the assignment |
-| Toggle running / walking | Either wheel > **RUN / WALK**, using the opposite hand's laser + trigger |
+| Toggle running / walking | Double-tap the right stick up during gameplay (a short right-hand vibration confirms), or either wheel > **RUN / WALK**, using the opposite hand's laser + trigger. The double tap is ignored while a wheel, menu, VR Settings or the wrist map is up; a sideways push still only turns |
 | Finish editing | Click the wheel hand's stick again, or select CLOSE in its center |
 | Inventory / character / skills / journal | Left Grip + left stick click; or either wheel > INVENTORY; native tabs retain their controls |
 | VR settings / body calibration | Either wheel → VR SETTINGS |

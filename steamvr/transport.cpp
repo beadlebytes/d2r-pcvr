@@ -72,13 +72,14 @@
 #include "foveation.h"
 #include "effects_layer.h"
 #include "gaze.h"
+#include "stick_tap.h"
 #include "d2rcam.h"
 #include "profile.h"
 #include "../vr/skeletons.h"
 
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
-namespace gamestate {void MenuMap(bool wanted);}
+namespace gamestate {void MenuMap(bool wanted);bool MenuOpen();}
 namespace gamestate {bool LeftShield();framevr::dualwield::Equipment MeleeEquipment();}
 namespace combat {float GameVolume();}
 
@@ -454,6 +455,7 @@ math::Vec origin{};
 bool haveOrigin=false;
 GripStickButton leftMenuButton;
 lootlabels::Shortcut lootLabelShortcut;
+sticktap::DoubleTap runTap; // right stick double tap up: run / walk
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
@@ -754,7 +756,7 @@ void ClearInput() {
     hapticPulses.Cancel();
     spellHaptics.Clear();
     lootlabels::display.Clear();
-    lootLabelShortcut.Suspend();
+    lootLabelShortcut.Suspend();runTap.Reset();
     meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=parryMissAt=0;
     wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
@@ -1834,7 +1836,16 @@ void Input() {
     for(int i=0;i<2;++i){interactionInput.tracked[i]=motionInput.tracked[i];interactionInput.grip[i]=motionInput.grip[i];
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};
         interactionInput.handVelocity[i]=handVelocity[i];interactionInput.velocityKnown[i]=handVelocityKnown[i];}
+    // The right stick's up/down is otherwise unused in the world (its x
+    // turns). Only plain gameplay: no wheel, game menu, VR Settings or
+    // calibration (motionInput.active), and not while the wrist map is raised.
+    interactionInput.runToggle=runTap.Step(motionInput.time,physicalRight.x,physicalRight.y,
+        interactionInput.active&&handOutput.wheel<0&&!interactionOutput.wheel&&!interactionOutput.navigation&&!gamestate::MenuOpen());
     interactionOutput=interactions.Step(interactionInput);
+    if(interactionInput.runToggle&&interactionOutput.request.action==interaction::Action::RunWalk) {
+        MotionPulse(0,haptics::Category::Interaction,.35f,30000000);
+        Say("Frame run toggle: double tap up");
+    }
     // Blood on the visor follows life bands; a side-to-side scrub at the face
     // wipes what healing has uncovered. A scrubbing hand is not a weapon.
     {

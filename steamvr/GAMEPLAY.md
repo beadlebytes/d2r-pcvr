@@ -189,6 +189,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
 | Inventory drop / sort | Native X (Quest Left X / Frame Left A) / press and hold right stick click; right-stick click no longer swaps in gameplay |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
+| Run / walk | Double-tap the right stick up (two up flicks within 0.4 s, back to center between; a sideways lean does not count), or either wheel > **RUN / WALK**. Same native command; one short right-hand vibration. Ignored while a wheel, menu, VR Settings or the wrist map is up |
 | Inventory menu / height reset | Left grip + left stick click / VR Settings > Reset eye height |
 
 Dropped-item names use **VR Settings > HUD > Loot label size**: **45%** by
