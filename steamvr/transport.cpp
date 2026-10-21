@@ -1843,7 +1843,7 @@ void Input() {
         interactionInput.active&&handOutput.wheel<0&&!interactionOutput.wheel&&!interactionOutput.navigation&&!gamestate::MenuOpen());
     interactionOutput=interactions.Step(interactionInput);
     if(interactionInput.runToggle&&interactionOutput.request.action==interaction::Action::RunWalk) {
-        MotionPulse(0,haptics::Category::Interaction,.35f,30000000);
+        MotionPulse(0,haptics::Category::Interaction,.7f,90000000);   // firm enough to feel through a step
         Say("Frame run toggle: double tap up");
     }
     // Blood on the visor follows life bands; a side-to-side scrub at the face
