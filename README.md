@@ -238,12 +238,19 @@ The new physical casting path still requires offline headset validation.
 ### Menus: laser and native buttons
 
 Both methods work in the main menu and native game panels, including inventory,
-stash and merchants. Keep the D2R window focused on the PC.
+stash and merchants, unless VR Settings > HUD > Game menus is set to
+Controller. Keep the D2R window focused on the PC.
 
-Use a **stick or face button** to start native button navigation and follow the
-game's displayed prompts. The idle laser will not move your native selection.
-To return to the laser, release the native controls and deliberately move your
-aim across the panel. A small hand tremor will not change methods.
+With VR Settings > HUD > Game menus on **Auto** (the default), use a **stick or
+face button** to start native button navigation and follow the game's displayed
+prompts. The idle laser will not move your native selection. To return to the
+laser, release the native controls and deliberately move your aim across the
+panel. A small hand tremor will not change methods.
+
+**Laser** passes held buttons and sticks to the game and brings the laser back
+as soon as you let go, without moving your aim. **Controller** keeps native
+navigation with no laser: the grips and triggers act as LB/RB/LT/RT, and Right
+Grip no longer pushes or pulls the panel. VR Settings keeps its laser.
 
 #### Laser controls
 
@@ -293,10 +300,6 @@ Quest controllers do not need a separate D-pad or Xbox controller: use sticks
 for native navigation and the laser for the on-screen controls. When using
 the laser, Right Trigger is a mouse click and the grips/triggers above provide
 its modifiers; once native navigation is selected, they perform LB/RB/LT/RT.
-VR Settings > HUD > Game menus picks the pointer: **Auto** (default) switches
-as above; **Laser** keeps the laser, passes held buttons and sticks to the game
-and brings the laser back as soon as they are released; **Controller** uses
-sticks and buttons only.
 Release buttons, triggers and sticks when opening or closing menus so a held
 input cannot also act in the next screen or in gameplay.
 

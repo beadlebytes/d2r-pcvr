@@ -17,7 +17,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, MenuPointer, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, MenuInput, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -118,7 +118,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     // Degrees above the throwing hand's path; a release follows through low.
     {"Throw lift", "Thrown weapons leave above the hand's path; - lowers them", L"gameplay",L"throw_lift_deg",10,-10,30,5},
     // Shares the Menu distance row (its right stepper). 0 Auto keeps the original switching.
-    {"Menu pointer", "Game menus: laser or buttons, Laser only, or Controller only", L"hud",L"menu_pointer",0,0,2,1},
+    {"Menu pointer", "Game menus: Auto, Laser after each press, or Controller only", L"hud",L"menu_pointer",0,0,2,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -146,7 +146,7 @@ inline float Normalize(Key key,float value){
     if(key==EnemySight)return float(enemysight::NormalizePercent(value));
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
-    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==MenuPointer||key==TooltipTiming||key==ProjectileAimAssist||key==GroundAim||key==SpellLock||key==StrainSpeed||key==StrainDark||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==MenuInput||key==TooltipTiming||key==ProjectileAimAssist||key==GroundAim||key==SpellLock||key==StrainSpeed||key==StrainDark||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -175,7 +175,7 @@ constexpr Rect ControllerBox{865,181,375,52};
 constexpr Rect HudMapViewBox{280,181,275,52},HudMapRotateBox{942,181,221,52};
 inline constexpr const char* MapViewNames[]={"Isometric","Top-down"};
 inline constexpr const char* MenuDistanceNames[]={"Close","Medium","Far"};
-inline constexpr const char* MenuPointerNames[]={"Auto","Laser","Controller"};   // menu_pointer 0 / 1 / 2
+inline constexpr const char* MenuInputNames[]={"Auto","Laser","Controller"};   // menu_pointer 0 / 1 / 2
 inline constexpr const char* TooltipTimingNames[]={"Instant","Short","Original"};
 constexpr Rect WeaponIndicatorsBox{942,666,221,52},PlanarSpellAimBox{942,728,221,52},AimAssistBox{942,790,221,52};
 inline Rect TestHapticsBox(int row,int choice,haptics::Category category){return {haptics::PreviewCount(category)==1?700:590+choice*128,RowY+row*RowStep,haptics::PreviewCount(category)==1?140:122,52};}
@@ -362,7 +362,7 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
 // Two settings that belong together share a row, a stepper each: the left
 // hand's outline color and the right's, the guard strain's color and buildup,
 // the game menus' distance and pointer.
-inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:key==StrainDark?StrainSpeed:key==MenuDistance?MenuPointer:Count;}
+inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:key==StrainDark?StrainSpeed:key==MenuDistance?MenuInput:Count;}
 inline bool Paired(Key key){return PairOf(key)!=Count;}
 inline const char* RowLabel(Key key,const Context& c){
     if(key==HighlightLeft)return "Hand colors";
@@ -528,7 +528,7 @@ public:
             else if(key==StrainSpeed)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,2.f);
             else if(key==FoveationStrength||key==StereoRendering)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
             else if(key==SpellLock)draft[key]=LockStep(draft[key],hit.delta,context);
-            else if(key==ProjectileAimAssist||key==StrainDark||key==GroundAim)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);   // cycles
+            else if(key==ProjectileAimAssist||key==StrainDark||key==GroundAim||key==MenuInput)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);   // cycles
             else if(key==BowLaser){   // round the wheel through Off: ... 345, Off, 0, 15 ... both ways
                 const float next=draft[key]+hit.delta*d.step;
                 draft[key]=Normalize(key,next>d.max?d.min:next<d.min?d.max:next);

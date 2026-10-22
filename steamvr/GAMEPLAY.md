@@ -337,9 +337,12 @@ around your hand by the same angle, but it never rolls. Tilt stops at 60
 degrees and the panel stays 0.40 m to 1.50 m from your head.
 It reopens in the same place relative to where you face until restart.
 
-Sticks/face buttons select native menu navigation without an idle laser stealing
-focus. Release native controls and deliberately move the ray across the surface
-to return to laser input. Dragging retains pointer ownership. All player-facing
+With VR Settings > HUD > Game menus on Auto (the default), sticks/face buttons
+select native menu navigation without an idle laser stealing focus. Release
+native controls and deliberately move the ray across the surface to return to
+laser input. Laser returns to laser input as soon as the native controls are
+released; Controller stays on native navigation, with no laser or Right Grip
+panel push/pull (VR Settings keeps its laser). Dragging retains pointer ownership. All player-facing
 Quest and Frame mappings are in [CONTROLS.md](../CONTROLS.md).
 
 For the native quick-drop shortcut, point at an inventory item, hold **Left
