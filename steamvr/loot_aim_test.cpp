@@ -19,8 +19,8 @@ struct Memory {
         std::memcpy(&value,raw,sizeof raw);return true;
     }
     // A unit: type, class, id, mode; its path at +0x38; the room list's link at +0x160.
-    void Unit(uintptr_t at,uint32_t type,uint32_t mode,uintptr_t path,uintptr_t next) {
-        const uint32_t header[4]={type,0,uint32_t(at),mode};
+    void Unit(uintptr_t at,uint32_t type,uint32_t mode,uintptr_t path,uintptr_t next,uint32_t id=0) {
+        const uint32_t header[4]={type,0,id?id:uint32_t(at),mode};
         Put(at,header);Put(at+0x38,path);Put(at+0x160,next);
         Put(at+0x158,uintptr_t(0x990000));   // the hash-list link leads somewhere else entirely
     }
@@ -91,20 +91,38 @@ int main() {
     m.Unit(0x900000,4,4,0x910000,0);m.Cell(0x910000,102,200);          // an item in another mode (not on the ground)
     m.Unit(0x800000,4,5,0x810000,0x800000);m.Cell(0x810000,99,201);    // an item dropping; its link ends at itself
     auto read=[&](uintptr_t at,auto& value){return m.Read(at,value);};
-    uintptr_t units[MaxItems];float cells[MaxItems*2];float hx=0,hy=0;
-    const int n=Collect(hero,read,units,cells,MaxItems,hx,hy);
+    uintptr_t units[MaxItems];uint32_t ids[MaxItems];float cells[MaxItems*2];float hx=0,hy=0;
+    const int n=Collect(hero,read,units,ids,cells,MaxItems,hx,hy);
     Check(n==2&&units[0]==0x600000&&units[1]==0x800000,"items on the ground or dropping, each once");
+    Check(ids[0]==0x600000&&ids[1]==0x800000,"with their unit ids");
     Check(cells[0]==101&&cells[1]==200&&cells[2]==99&&cells[3]==201&&hx==100&&hy==200,"their cells and the hero's");
-    Check(Collect(hero,read,units,cells,1,hx,hy)==1,"never more than asked for");
-    Check(Collect(0x123000,read,units,cells,MaxItems,hx,hy)==0,"no hero path: nothing");
+    Check(Collect(hero,read,units,ids,cells,1,hx,hy)==1,"never more than asked for");
+    Check(Collect(0x123000,read,units,ids,cells,MaxItems,hx,hy)==0,"no hero path: nothing");
 
     // A fresh walk confirms a pick before it goes to the game.
-    Check(Contains(hero,read,0x600000)&&Contains(hero,read,0x800000),"items still on the floor are there");
-    Check(!Contains(hero,read,0x900000),"an item no longer on the floor is not");
-    Check(!Contains(hero,read,0x700000)&&!Contains(hero,read,0x123456)&&!Contains(hero,read,0),"a monster, a unit not in the rooms, none: not");
+    Check(Contains(hero,read,0x600000,0x600000)&&Contains(hero,read,0x800000,0x800000),"items still on the floor are there");
+    Check(!Contains(hero,read,0x900000,0x900000),"an item no longer on the floor is not");
+    Check(!Contains(hero,read,0x700000,0x700000)&&!Contains(hero,read,0x123456,0x123456)&&!Contains(hero,read,0,0),"a monster, a unit not in the rooms, none: not");
+    const Live live=Find(hero,read,0x800000,0x800000);
+    Check(live.found&&live.x==99&&live.y==201&&live.heroX==100&&live.heroY==200&&live.header[2]==0x800000,"the walk gives its cell now and the hero's");
+
+    // The handover rule: only a unit the fresh walk found, with the picked id.
+    uint32_t header[4]={4,0,0x600000,3};
+    Check(HandOver(header,0x600000,true,0,true),"found on the floor with its id: handed");
+    Check(!HandOver(header,0x600000,true,0,false),"freed: the header still reads as a floor item, but the walk misses it");
+    Check(!HandOver(header,0x600001,true,0,true),"the same address, another unit's id: not handed");
+    Check(!HandOver(header,0x600000,false,0,true)&&!HandOver(header,0x600000,true,MaxPickAgeMs,true),"another area or too old: not handed");
+
+    // Freed: dropped out of the room list with its header intact.
+    m.Put(room+0xa8,uintptr_t(0x700000));   // the room's list now starts past it
+    Check(!Contains(hero,read,0x600000,0x600000),"gone from the room list: not there, whatever its bytes say");
+    m.Put(room+0xa8,uintptr_t(0x600000));
+    // Reused: the same address, now another item (another id).
+    m.Unit(0x600000,4,3,0x610000,0x700000,0x5555);
+    Check(!Contains(hero,read,0x600000,0x600000)&&Contains(hero,read,0x600000,0x5555),"a reused address is another unit");
     m.Unit(0x600000,4,4,0x610000,0x700000);   // picked up: on the cursor now
-    Check(!Contains(hero,read,0x600000),"picked up: not there any more");
-    Check(Collect(hero,read,units,cells,MaxItems,hx,hy)==1,"nor collected");
+    Check(!Contains(hero,read,0x600000,0x600000),"picked up: not there any more");
+    Check(Collect(hero,read,units,ids,cells,MaxItems,hx,hy)==1,"nor collected");
 
     // The walk stops at the sewer search's limits, even on a list that loops.
     Memory loop;
@@ -114,6 +132,19 @@ int main() {
     loop.Unit(0x600000,1,1,0x610000,0x601000);loop.Unit(0x601000,1,1,0x611000,0x600000);   // two units linked to each other
     auto readLoop=[&](uintptr_t at,auto& value){return loop.Read(at,value);};
     Check(Walk(hero,readLoop,[](uintptr_t,const uint32_t*){return true;},hx,hy)==MaxChain,"a looping list stops at 256 a room");
+
+    // ... and at 1024 units across rooms: five rooms of 256 each.
+    Memory many;
+    many.Put(hero+0x38,heroPath);many.Put(heroPath,heroXy);many.Put(heroPath+0x20,room);
+    many.Put(room,list);many.Put(room+0x40,uint32_t(5));
+    for(uintptr_t r=0;r<5;++r) {
+        const uintptr_t rm=0x2000000+r*0x100000;
+        many.Put(list+r*8,rm);many.Put(rm+0xa8,rm+0x1000);
+        for(uintptr_t k=0;k<MaxChain;++k)many.Unit(rm+0x1000+k*0x200,1,1,0,k+1<MaxChain?rm+0x1000+(k+1)*0x200:0);
+    }
+    many.Put(room+0xa8,uintptr_t(0));
+    auto readMany=[&](uintptr_t at,auto& value){return many.Read(at,value);};
+    Check(Walk(hero,readMany,[](uintptr_t,const uint32_t*){return true;},hx,hy)==MaxVisited,"1024 units in all, however many rooms");
 
     // The pick is usable only while on the floor, in the same area, and fresh.
     Check(Usable(4,3,true,0)&&Usable(4,5,true,MaxPickAgeMs-1),"on the ground or dropping, same area, fresh");

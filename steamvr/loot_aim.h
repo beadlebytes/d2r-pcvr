@@ -114,9 +114,18 @@ inline bool OnFloor(uint32_t type,uint32_t mode) {return type==4&&(mode==3||mode
 // is picked up, so an old pointer must never reach it.
 constexpr uint64_t MaxPickAgeMs=200;
 inline bool Usable(uint32_t type,uint32_t mode,bool sameArea,uint64_t ageMs) {return OnFloor(type,mode)&&sameArea&&ageMs<MaxPickAgeMs;}
+// The handover rule: usable as above, the same unit id as when it was picked (a
+// freed address reused by another unit is not it), and found on the floor by a
+// walk of the hero's rooms made in this same call. The walk is the guarantee: a
+// freed unit keeps its old header bytes, but it is gone from the room lists.
+inline bool HandOver(const uint32_t* header,uint32_t pickId,bool sameArea,uint64_t ageMs,bool walkFound) {
+    return walkFound&&Usable(header[0],header[3],sameArea,ageMs)&&header[2]==pickId;
+}
 
 // What tells areas apart for the pick: the hero unit, the game's area id (0 while
 // unknown: not compared) and the biome generation (bumped on each new area's look).
+// Defense in depth only: the area id reads 0 when the game state is stale, and two
+// neighboring areas may share a look. The fresh walk (HandOver) is the guarantee.
 struct Area {uintptr_t hero=0;int level=0;uint32_t generation=0;};
 inline bool SameArea(const Area& a,const Area& b) {
     return a.hero==b.hero&&a.generation==b.generation&&(!a.level||!b.level||a.level==b.level);
@@ -158,32 +167,46 @@ int Walk(uintptr_t hero,Read read,Visit visit,float& heroX,float& heroY) {
     return visited;
 }
 
-// Dropped items near the hero (on the ground or dropping), each with the cell on
-// its static path (+0x10/+0x14). Returns the count.
+// A floor item's cell on its static path (+0x10/+0x14).
 template<class Read>
-int Collect(uintptr_t hero,Read read,uintptr_t* units,float* cells,int most,float& heroX,float& heroY) {
+bool ItemCell(uintptr_t unit,Read read,uint32_t (&cell)[2]) {
+    uintptr_t staticPath=0;
+    return read(unit+0x38,staticPath)&&read(staticPath+0x10,cell)&&cell[0]&&cell[1]&&cell[0]<=65535&&cell[1]<=65535;
+}
+
+// Dropped items near the hero (on the ground or dropping), each with its unit id
+// (header +0x08) and cell. Returns the count.
+template<class Read>
+int Collect(uintptr_t hero,Read read,uintptr_t* units,uint32_t* ids,float* cells,int most,float& heroX,float& heroY) {
     int count=0;
     if(most<=0)return 0;
     Walk(hero,read,[&](uintptr_t unit,const uint32_t* header) {
-        uintptr_t staticPath=0;uint32_t cell[2]{};
-        if(OnFloor(header[0],header[3])&&read(unit+0x38,staticPath)&&read(staticPath+0x10,cell)&&
-           cell[0]&&cell[1]&&cell[0]<=65535&&cell[1]<=65535&&std::find(units,units+count,unit)==units+count) {
-            units[count]=unit;cells[count*2]=float(cell[0]);cells[count*2+1]=float(cell[1]);++count;
+        uint32_t cell[2]{};
+        if(OnFloor(header[0],header[3])&&ItemCell(unit,read,cell)&&std::find(units,units+count,unit)==units+count) {
+            units[count]=unit;ids[count]=header[2];cells[count*2]=float(cell[0]);cells[count*2+1]=float(cell[1]);++count;
         }
         return count<most;
     },heroX,heroY);
     return count;
 }
 
-// Is this unit still an item on the floor in the hero's rooms (a fresh walk)?
+// A fresh walk's answer for the pick: still on the floor in the hero's rooms with
+// the same unit id, its cell now and the hero's (for the reach and the glow).
+struct Live {bool found=false;uint32_t header[4]{};float x=0,y=0,heroX=0,heroY=0;};
 template<class Read>
-bool Contains(uintptr_t hero,Read read,uintptr_t item) {
-    bool found=false;float x=0,y=0;
-    if(!item)return false;
+Live Find(uintptr_t hero,Read read,uintptr_t item,uint32_t id) {
+    Live live;
+    if(!item)return live;
     Walk(hero,read,[&](uintptr_t unit,const uint32_t* header) {
-        if(unit==item)found=OnFloor(header[0],header[3]);
-        return unit!=item;
-    },x,y);
-    return found;
+        if(unit!=item)return true;
+        uint32_t cell[2]{};
+        if(OnFloor(header[0],header[3])&&header[2]==id&&ItemCell(unit,read,cell)) {
+            live.found=true;std::copy_n(header,4,live.header);live.x=float(cell[0]);live.y=float(cell[1]);
+        }
+        return false;
+    },live.heroX,live.heroY);
+    return live;
 }
+template<class Read>
+bool Contains(uintptr_t hero,Read read,uintptr_t item,uint32_t id) {return Find(hero,read,item,id).found;}
 }
