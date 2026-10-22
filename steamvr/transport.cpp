@@ -1290,6 +1290,11 @@ void MenuPointer(const menus::Pad& controls) {
         }
     }
     const bool wasNative=menuNavigation.Native();
+    const auto pointer=menus::Pointer(std::clamp(int(vrsettings::Read().values[settings::MenuPointer]),0,2));
+    if(pointer!=menuNavigation.pointer){   // once per change: Auto is the original switching
+        char line[80];std::snprintf(line,sizeof line,"Frame menu pointer: %s",settings::MenuPointerNames[int(pointer)]);Say(line);
+    }
+    menuNavigation.pointer=pointer;
     nativeMenuPad=menuNavigation.Step(uiActive&&focused,controls,pointerHit,hit.u,hit.v,mouseDown||rightMouseDown);
     if(wasNative!=menuNavigation.Native()&&uiActive&&focused)
         Say(menuNavigation.Native()?"Frame panels: native controller navigation":"Frame panels: laser navigation");

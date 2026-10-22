@@ -427,6 +427,10 @@ Quest controllers do not need a separate D-pad or Xbox controller: use sticks
 for native navigation and the laser for the on-screen controls. When using
 the laser, Right Trigger is a mouse click and the grips/triggers above provide
 its modifiers; once native navigation is selected, they perform LB/RB/LT/RT.
+VR Settings > HUD > Game menus picks the pointer: **Auto** (default) switches
+as above; **Laser** keeps the laser, passes held buttons and sticks to the game
+and brings the laser back as soon as they are released; **Controller** uses
+sticks and buttons only.
 Release buttons, triggers and sticks when opening or closing menus so a held
 input cannot also act in the next screen or in gameplay.
 
