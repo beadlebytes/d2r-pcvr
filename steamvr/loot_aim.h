@@ -84,11 +84,11 @@ inline bool Pointing(bool on,float reachM,float rayY) {
 // Close enough for A to pick it up without walking? limit 0 = any distance.
 inline bool InReach(float cells,float limit) {return limit<=0||(cells>=0&&cells<=limit);}
 
-// The item's name colour, as the game draws it, for its highlight: white normal
-// (grey when socketed or ethereal), blue magic, green set, yellow rare, gold
+// The item's name color, as the game draws it, for its highlight: white normal
+// (gray when socketed or ethereal), blue magic, green set, yellow rare, gold
 // unique, orange crafted/tempered. Item data (unit +0x10): quality +0x00
 // (1 low .. 8 crafted), flags +0x18 (0x800 socketed, 0x400000 ethereal).
-inline void RarityColour(uint32_t quality,uint32_t flags,float rgb[3]) {
+inline void RarityColor(uint32_t quality,uint32_t flags,float rgb[3]) {
     float c[3]={1,1,1};
     switch(quality) {
         case 4: c[0]=.41f;c[1]=.41f;c[2]=1;break;   // magic

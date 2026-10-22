@@ -18,6 +18,26 @@ void ConfigureSymmetricProjection(bool enabled);
 // [stereo] turns_from_drawn_eye (1): by turns, the eye not drawn mostly from
 // the drawn eye's picture of this frame (TurnDepth); 0: its own image alone.
 void ConfigureTurnsFromDrawnEye(bool enabled);
+// [stereo] turns_keep_own (3): the eye not drawn keeps its own older
+// picture where that shows the same surface as the drawn eye's, so glows and
+// hair stand where this eye sees them (TurnDepth::keep) - 1 round near things
+// only (TurnDepth::keepNear), 2 everywhere, 3 where the game's effects
+// layer has something (TurnDepth::keepEffects), 4 both near things and
+// effects; 0: the drawn eye's picture
+// wherever it reaches. Applied when the ini's value changes; DEV > Equipment
+// switches it for the session (Set), and reads it back.
+void ConfigureTurnsKeepOwn(int mode);
+void SetTurnsKeepOwn(int mode);
+int TurnsKeepOwn();
+// [stereo] turns_keep_gap (48), turns_keep_reach (96), a 4096-wide eye's
+// pixels: near things are nearer than what is round them by more than the
+// gap in parallax; their own picture is kept within the reach of them.
+void ConfigureTurnsKeepNear(float gap,float reach);
+// [stereo] turns_effects_level (0.02), turns_effects_reach (32, a 4096-wide
+// eye's pixels): with turns_keep_own 3 or 4, the eye's own picture is kept
+// where the game's effects layer has this much (its strongest channel)
+// within the reach.
+void ConfigureTurnsKeepEffects(float level,float reach);
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
@@ -32,8 +52,18 @@ bool CrossbowAiming();
 bool NativeAimOwnership(); // hand casting or wheel: preserve locomotion, suppress legacy aim modes
 bool NativeSkillCasting(); // any active trigger/quick cast; retain native locomotion input
 bool DirectedSpellActive(); // fresh native assignment, actually casting (wheel or quick shortcut)
+bool BowSkillActive();   // a bow or crossbow skill is being cast from a button (bow ready)
+int GroundSpellSkill();   // a ground skill (spellaim::GroundTarget) being cast that lands where it is aimed: its id, or -1
 int NativeCastSkill(); // current fresh native cast id, -1 when idle/blocked/stale
 bool GameplayRay(float origin[3],float direction[3]);
+// Aim rules: each hand's own aim in GameplayRay's frame - the controller's
+// pointer, or the bow's forward for the left hand holding a bow.
+bool HandAimRay(int hand,float origin[3],float direction[3]);
+int CastButtonHand();        // the hand whose button holds a native cast now, -1 none
+bool HandSpellHeld(int hand); // that hand's physical spell button is held
+int PointSpellSkill();       // the cast skill when the aim rules place it at a point, else -1
+int AimRulesSkill();         // the cast skill (any), -1 none; with its game "directed" flag
+bool AimRulesDirected();
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand=0);
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample);
 bool RequestShieldSkill(const melee::Sample& sample,uint32_t target,math::Vec gridTarget);
@@ -62,6 +92,7 @@ void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds
 // optional 16-bit PCM WAV (empty: the built-in bone snap) played once as the guard breaks.
 void ConfigureGuardBreakSound(float volume,const wchar_t* file);
 void SpellCast(int hand,uint64_t session); // one successful hand spell, not each projectile
+void SpellVisualCast(const bowflight::Shot&); // confirmed hand cast; cosmetic only
 bool TakeBowShot(bowflight::Shot& shot);
 bool TakeCrossbowShot(bowflight::Shot& shot);
 bool CrossbowHeld(const bowflight::Shot& shot);
@@ -78,6 +109,12 @@ struct FrameTiming {
     uint32_t pipelines=0;bool gpuValid=false;
 };
 FrameTiming LastTiming();
+// One headset frame as the render thread measured it, for VR Settings > Perf:
+// the runtime's wait (xrWaitFrame), the game's drawing (one eye by turns, both
+// in a pair), the mod's own work around it without that wait, and the
+// headset's frame (budgetMs). periodMs is the time since the last frame ended
+// and gameMs the game's update between them; both 0 after menus or pairs.
+void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double periodMs,double budgetMs,bool byTurns);
 void Shutdown(bool preserveResolution=false);
 // byTurns: this frame draws one eye; EndPair submits the other eye's last
 // image again at the pose and FOV it was drawn with. replay: the right eye is
@@ -85,9 +122,9 @@ void Shutdown(bool preserveResolution=false);
 // its own x, and placed so.
 void BeginPair(bool byTurns=false,bool replay=false);
 void BeginEye(int eye);
-// VR Settings > Video > Stereo rendering: 0 both eyes, 1 By turns (the eye not
-// drawn turned and moved with the scene's depth; the default), 2 Replay (one
-// CPU pass, the right eye replayed from it).
+// VR Settings > Perf > Stereo rendering: 0 both eyes, 1 By turns (the eye not
+// drawn turned and moved with the scene's depth; the default). Replay (2) is
+// no longer a choice (vr_settings.h).
 int StereoRendering();
 // [render] defer_gpu_wait: frames end without waiting for the GPU.
 bool GpuWaitDeferred();

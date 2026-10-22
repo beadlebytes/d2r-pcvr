@@ -72,10 +72,10 @@ int main() {
     Check(InReach(5,5.5f)&&!InReach(6,5.5f)&&!InReach(-1,5.5f)&&InReach(30,0),"pick-up reach, 0 = any distance");
 
     float rgb[3];
-    RarityColour(4,0,rgb);Check(rgb[2]==1&&rgb[0]<.5f,"magic is blue");
-    RarityColour(7,0,rgb);Check(rgb[0]>.8f&&rgb[2]<.5f,"unique is gold");
-    RarityColour(2,0x800,rgb);Check(rgb[0]==.6f&&rgb[1]==.6f,"a socketed normal item is grey");
-    RarityColour(2,0,rgb);Check(rgb[0]==1&&rgb[1]==1&&rgb[2]==1,"a normal item is white");
+    RarityColor(4,0,rgb);Check(rgb[2]==1&&rgb[0]<.5f,"magic is blue");
+    RarityColor(7,0,rgb);Check(rgb[0]>.8f&&rgb[2]<.5f,"unique is gold");
+    RarityColor(2,0x800,rgb);Check(rgb[0]==.6f&&rgb[1]==.6f,"a socketed normal item is gray");
+    RarityColor(2,0,rgb);Check(rgb[0]==1&&rgb[1]==1&&rgb[2]==1,"a normal item is white");
     for(uint64_t ms=0;ms<2000;ms+=37)Check(Pulse(ms)>=.6f-1e-4f&&Pulse(ms)<=1+1e-4f,"the pulse stays between 60% and full");
 
     // The room walk: the hero's room and its near rooms, units linked at +0x160.

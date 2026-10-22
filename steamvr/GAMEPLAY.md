@@ -127,7 +127,8 @@ Legacy aim modes cannot replace that stick or hold stand-still Shift during a
 VR skill cast. The owner reports that casting still stops character movement;
 this input fix does not remove the game's animation/state restrictions.
 Teeth keeps its native fan, centered on the weapon's horizontal direction.
-Ground placements, buffs, summons and corpse-only skills keep native targeting.
+Ground placements, buffs, summons and corpse-only skills keep native targeting
+(unless VR Settings > Aim turns the aim rules on; see the Aim page).
 Host tests and native signature/table checks pass; this aim correction still
 needs a headset check with Teeth. Immediate hand-origin **3D** spell flight/contact
 remains pending: missiles still use the native ground plane, animation, effects,
@@ -168,7 +169,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Selected skill / spell | Point right hand and press trigger; supported bow skills also use draw/release as described below |
 | Selected Amazon arrow skill | Draw and release once for the native skill; Multiple Shot emits its fan, Strafe requests its native volley |
 | Selected Smite with a shield | Swing or thrust the left shield through an enemy; keep right trigger released |
-| Quick cast without opening wheel | Hold Left Trigger, point right hand and press a face button; add Left Grip for the alternate four slots (mapping below) |
+| Cast without opening the wheel | Each hand casts its own skills, aimed with that hand: trigger, two face buttons, and same-hand grip + face button for two more ([hand skill layouts](../CONTROLS.md#hand-skill-layouts)) |
 | Melee swing / thrust | Swing the equipped melee weapon through a creature, including with a skill selected; no grip, trigger, or preselected target |
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
@@ -183,7 +184,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
-| Show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger**, grip first, to hold the native Show Items action. Release either to restore normal drop/hover labels; listed in **VR Settings > Controls** |
+| Show all nearby loot labels (Alt) | Hold the **right stick down** to hold the native Show Items action; let go to restore normal drop/hover labels. Push it **up** to toggle running / walking. Listed in **VR Settings > Controls** |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
@@ -195,14 +196,16 @@ Dropped-item names use **VR Settings > HUD > Loot label size**: **45%** by
 default, adjustable from **20% to 150%** in five-percentage-point steps.
 Apply saves `[hud] labels_size` in `d2r_pcvr.ini` and updates it live; existing
 saved sizes are preserved. Text, dark backing bounds and click targets scale
-together; item-quality colors are preserved. **Right Grip + Right
-Trigger** holds the native **Show Items (Alt)** action, with a short vibration
-when the hold starts. All nearby loot labels stay shown while both buttons are
-held, using the game's native Alt range rather than a VR aiming or pickup radius.
-Release either button to restore normal labels for newly dropped or hovered items. It consumes
-the trigger squeeze without casting or shooting, including if you release grip first.
-Hold grip before squeezing the trigger; adding grip to an existing attack does
-not turn that attack into a loot-label hold. Analog hysteresis tolerates squeeze noise.
+together; item-quality colors are preserved. Holding the **right stick down**
+holds the native **Show Items (Alt)** action, with a short vibration when the
+hold starts. All nearby loot labels stay shown while the stick is held, using
+the game's native Alt range rather than a VR aiming or pickup radius. Let go to
+restore normal labels for newly dropped or hovered items. Pushing the right
+stick **up** toggles running / walking, once per push, like the wheel's
+RUN / WALK. Its sideways pushes keep turning: a push counts only when mostly
+vertical, and from then until the stick is back near the centre it turns
+nothing. Neither works while a wheel, menu or VR Settings is open; a stick
+still held when they close must return to the centre first.
 Release the combo before casting or starting a grip interaction again.
 Use it outside menus and wheels, with no potion or holster interaction active.
 Normal right-stick clicks still toggle the wheel; native menu hold-to-sort stays
@@ -212,9 +215,10 @@ there is no saved toggle or automatic resume.
 The game's native item/filter rules apply. Inventory tooltips and monster labels
 keep their styling.
 
-**Choosing which item Interact picks up (native VR).** With several items on the
+**Choosing which item Interact picks up (native VR).** VR Settings > Aim >
+**Loot pick**: Off (default), On, or On with glow. With several items on the
 floor, Interact (right A by default) takes the item you choose rather than the
-game's nearest one. Hold the right arm out (about 20 cm from your head, less when
+game's nearest one. Hold the aiming arm out (about 20 cm from your head, less when
 pointing steeply down at your feet) and point at an item: the item nearest the
 spot where the hand's ray meets the floor is chosen. With the arm resting, the
 item nearest the spot you look at is chosen instead (the look is taken a few
@@ -227,18 +231,16 @@ A chosen item farther than the pick-up reach (5.5 cells by default) is not
 picked up and the hero does not walk to it. Other objects keep working. Step
 closer or look at a nearer item.
 
-The item Interact will take glows along its 3D model's outline in its rarity
-colour: white normal, grey socketed or ethereal, blue magic, green set, yellow
-rare, gold unique, orange crafted. Its name, when the game shows it (for
-example while holding Show Items, or for a fresh drop), gets a frame in the same
-colour and is drawn 30% larger. The glow pulses gently. A chosen item past the
-pick-up reach glows a steady red instead. These are INI-only settings because
-every VR Settings tab is full:
+With **On with glow**, the item Interact will take glows along its 3D model's
+outline in its rarity color: white normal, gray socketed or ethereal, blue magic,
+green set, yellow rare, gold unique, orange crafted. Its name, when the game shows
+it (for example while holding the right stick down to show items, or for a fresh
+drop), gets a frame in the same color and is drawn 30% larger. The glow pulses
+gently. A chosen item past the pick-up reach glows a steady red instead. The
+reach is INI only:
 
 ```ini
 [interactions]
-loot_pick=1               ; 0 = the game's nearest item, as on a gamepad
-loot_highlight=1          ; 0 = no outline or name frame
 loot_pick_reach_cells=5.5 ; 0 = any distance (A walks to the chosen item), up to 25
 ```
 
@@ -301,6 +303,17 @@ still apply outside active headset gameplay. Labels and tooltips outside the
 toolbar strip remain visible. Verify both eyes and the game's different UI
 safe-area sizes when testing this fix in a headset.
 
+Quest updates and level-ups no longer hang in front of your eyes. In the
+headset the game's notification box ("Quest has been updated", "You've
+leveled up") is hidden, and its message appears on a small card in the room
+instead: about a metre ahead where you were looking, a little below eye
+level. Each card stays put for 3 seconds; a level-up shows its skill-point
+and stat-point cards one after the other. The text is the game's own, in its
+current language. The hidden box keeps its native timing. Cards wait while
+an opaque menu or VR Settings is open and are dropped after 10 seconds.
+Placement, readability, and whether ≡ still opens the quest page while the
+hidden box is up still need a headset check.
+
 The Map tab preserves your selected spell and uses the native explored areas
 and markers. Choose the left or right corner minimap layout in game options;
 full-screen automap capture is unsupported. When neither the wrist nor the Map
@@ -335,7 +348,26 @@ placement. Title and character-selection screens keep the existing flat panel.
 | Native menu navigation | Sticks or face buttons; triggers and grips map LT/RT/LB/RB in native navigation |
 | Native Ctrl modifier | Hold left trigger while clicking |
 | Native Shift modifier | Hold right grip while clicking |
+| Push / pull the panel | Point at it, hold right grip and move that hand toward or away from you; release to leave it there |
 | Back / close | Right B, or the native close button |
+
+Game menus push and pull only: the panel moves nearer or farther by exactly
+the hand's travel toward or away from it, between 0.40 m and 1.50 m, and
+ignores sideways, vertical and turning movement. It starts only when the right
+laser is on the panel and the hand travels 3 cm toward or away before any
+click, so a still grip followed by a trigger click stays a native Shift-click;
+a trigger squeezed while moving does nothing until released. The laser and
+clicks follow the moved panel. Every in-game and main/title menu reopens at
+that distance until the game is restarted or **VR Settings > HUD > Menu
+distance** is changed. The handheld quest log keeps its left-grip placement.
+
+The VR Settings panel is grabbed like a real window with the same right grip:
+the point you grabbed stays on the end of the laser. Moving the hand without
+turning it slides the panel 1:1 (up, down, left, right, nearer, farther);
+tilting the controller up/down or turning it left/right swings the panel
+around your hand by the same angle, but it never rolls. Tilt stops at 60
+degrees and the panel stays 0.40 m to 1.50 m from your head.
+It reopens in the same place relative to where you face until restart.
 
 Sticks/face buttons select native menu navigation without an idle laser stealing
 focus. Release native controls and deliberately move the ray across the surface
@@ -381,17 +413,42 @@ pending.
 
 ### In-headset VR settings
 
-The panel opens in front of the headset and stays in room space. It has six
+The panel opens in front of the headset and stays in room space. It has nine
 tabs and a **Reset eye height** button:
 
 | Tab | Contents |
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
 | VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
-| Video | Foveation Off / Fixed / Eye tracked and its strength (Low / Medium / High / Maximum), actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution (Headset by default), desktop one eye, stereo rendering (Both eyes / By turns / Replay, By turns by default), a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA |
+| Video | Added sky, fog and dungeon ceilings, and the experimental Sorceress elemental hand effects (Off by default) |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
 | Combat | Melee rules, swing hit speed and thrust speed |
+| Aim | Whether spells and bow skills go to the aimed monster, the staff aiming where your arm points, and the aimed monster's outline: strength, which hands show it, and each hand's color (by range or one hue), where ground skills land (the game's aim, where you point or the aimed monster), and landing circles. Every option that changes how a cast aims is Off (Game) by default |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
+| Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, ReShade depth (after a restart) and desktop one eye; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
+| Notes | The last published release's notes, read-only |
+
+Pages show only the rows that can apply to the character the panel is open
+for. Another class's rows are left out:
+- elemental hand effects are the Sorceress's;
+- Ground skills and Landing circles are for the Sorceress, Assassin, Druid and Necromancer;
+- the bow path laser is the Amazon's, or any class's with a bow in hand;
+- staff aim is the Sorceress's and Druid's, or any class's with a staff in hand.
+
+**Skills go to the aimed monster** offers Spells, Bow skills or Both to an
+Amazon. Other classes see **Spells go to the aimed monster**, On or Off, and
+keep the Amazon's bow skills choice. Rows that only matter with another
+row's choice also stay hidden until they do:
+- the outline's highlights and hand colors while Monster outline is Off;
+- Landing circles while Ground skills is Game;
+- foveation strength while foveated rendering is Off;
+- the snap angle or smooth turn speed of the turning mode not chosen;
+- the standing belt drop while seated;
+- the face wipe without blood on the visor.
+
+Settings that belong together share a row, with a stepper each: **Hand colors**
+(left hand, right hand) and **Guard strain** (color, buildup). The title and
+character screens show every class's rows.
 
 Added indoor fog defaults to **Off** for new profiles, preserving the game's
 own lighting and effects, including Tyrael's wings. Outdoor fog keeps its
@@ -492,26 +549,12 @@ release the selection trigger before casting. **BASIC ATTACK** restores the basi
 right-trigger attack or physical bow controls. Free melee swings remain
 available with a skill selected, pausing during casting, menus or potion handling.
 
-Quick casting uses the **same saved bindings**, while keeping the selected
-right-trigger ability. Point with the right hand, hold **Left Trigger**, then
-press one face button. Hold the button to use the native repeat/channel behavior;
-release it to stop. Add **Left Grip** before pressing for the alternate slot.
-
-| VR face button while Left Trigger is held | Native binding | With Left Grip also held |
-|---|---|---|
-| Right A | B | LT + B |
-| Right B | X | LT + X |
-| Left A on Frame / X on Quest | Y | LT + Y |
-| Left B on Frame / Y on Quest | RB | LT + RB |
-
-The wheel shows these VR shortcuts below the skill names. These chords require
-motion controls and apply during gameplay; menus keep their pointer/modifier
-controls. While quick casting, face buttons do not also open inventory/wheel,
-interact, cancel, or open settings, and Left Grip cannot grab a belt potion or
-holster. Entering the layer cancels a drawn bow without shooting. Release and
-press again after changing the alternate-slot grip, tracking interruption or
-weapon swap. Unassigned/unavailable slots cannot cast; costs and timing remain
-native. Candidate host tests pass; headset quick-cast validation is pending.
+There is no left-trigger quick-cast layer. Each hand casts its own wheel
+skills, aimed with that hand: its trigger, its two face buttons, and the same
+hand's grip plus a face button for two more. Hold the input for the native
+repeat/channel behavior; release it to stop. The slots, the native gamepad
+bindings behind them and what happens when both hands cast at once are in
+[hand skill layouts](../CONTROLS.md#hand-skill-layouts).
 
 Equipping a different melee weapon or bow selects weapon mode. Javelins and
 throwing weapons use free-swing contacts; select the native Throw skill to throw.
@@ -950,7 +993,8 @@ instead of a random one. Classic keeps the native roll.
   (2026-10-19) started 0-156 ms after a blocked hit, timed to the animation. A
   parry swing within this long after a blocked melee hit (within 3 m) still parries
   it: the attacker staggers and the block's wear is restored; the block's strain
-  stands. A hit that landed on you is not undone. Logged as `Frame guard late parry:`
+  stands. Act bosses are never parried late either (2026-10-20: the late parry
+  had skipped the act-boss gate, so Andariel could be parried). A hit that landed on you is not undone. Logged as `Frame guard late parry:`
   and `late_parries` in `Frame guard:`; later swings stay `swing too late`. Hit-frame parries
   had come a median 516 ms after the swing (2026-10-18). An attack whose to-hit
   roll has already run is never staggered early; otherwise the to-hit roll or
@@ -968,14 +1012,15 @@ instead of a random one. Classic keeps the native roll.
   sliders (re-read from Settings.json when the game saves it), times
   `riposte_volume` (100).
 - **Guard strain light**: every blocked hit (not a parry) strains the guard by
-  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain buildup**
+  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain** (right stepper: buildup)
   selects Slow / Medium / Fast (`guard_strain_speed` 0 / 1 / 2, default Medium).
   Slow halves strain per block; Fast doubles it. With default tuning, full
   strain takes about 20 / 10 / 5 blocks in a row. The
   vignette size, lowering/reset time and blocking rules stay the same. Existing
   custom `guard_strain_per_block` tuning is multiplied, not overwritten. Strain shows as a soft vignette at the
   rim of the view (a pale white light by default; VR Settings > Combat > **Guard strain
-  color** switches it to a black shadow, `guard_strain_dark`, drawn denser by
+  color** switches it to a black shadow, `guard_strain_dark` 1, or hides it, `guard_strain_dark` 2
+  (Off: no light, but strain, guard breaks and chip damage still apply); the black is drawn denser by
   `guard_strain_dark_density` (2.5) so it hides as much as the light, and
   `guard_strain_color` takes any RRGGBB hex, default FFF7EA), beneath the blood on
   the visor, creeping inward as it builds;
@@ -1093,6 +1138,22 @@ to a special missile is currently refused before ammo is spent; use its assigned
 native skill through the palette instead. Selected arrow skills gain the candidate
 draw/release adapter above; their flight remains native. Other skills/spells
 retain their existing controls, costs, timings and collision behavior.
+
+**Bow path laser** (**VR Settings > Aim > Bow path laser**, `[bow] path_laser_hue`,
+Off by default): at full draw, while a release would shoot a physical
+arrow (basic, or Magic, Fire, Cold, Ice, Exploding, Immolation or Freezing
+Arrow), a faint line runs from the arrow's tip along the
+release's own direction. The one row chooses Off or the line's hue in
+15-degree steps, wrapping through Off in both directions (345°, Off, 0°);
+any negative saved value is Off (written as -15). The end dot is the same
+hue, brighter. The line has its own small atlas, repainted only when the
+color changes. Arrows have no gravity, so the line is the path. It
+stops with a dot where the flight would meet the launch floor, with the
+flight's own clearance, and otherwise fades out at 15 m: it is drawn over the
+scene and does not stop at walls or monsters, which only the flight tests.
+Multiple Shot, Guided Arrow, Strafe and crossbows show no line. The first line of each draw logs
+`Frame bow laser: shown (length N m)` (`, floor` added when it ends on the
+floor), at most every 2 seconds.
 
 For ordinary **basic crossbow bolts**, the held model's `bolt_helper` supplies
 the barrel line and muzzle. The supporting palm sits below that line, including

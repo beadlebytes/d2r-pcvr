@@ -189,7 +189,7 @@ Use a new offline expansion character in that separate save list.
 The tools are a **DEV tab on either hand's wheel**, beside VR Settings. Native
 builds include the dormant backend unless `-NoDevTools` is selected; the UI and
 actions require the exact isolated mod metadata. VR Settings has a separate
-Release Notes tab, available in regular and developer builds, containing a
+Notes tab (Release Notes), available in regular and developer builds, containing a
 read-only reference to the last published release. Follow [RELEASING.md](RELEASING.md)
 and the [.github release template](../.github/RELEASE_TEMPLATE.md) when publishing.
 Update the versioned `PCVR_IN_HEADSET_NOTES` summary inside `RELEASE_NOTES.md`;
@@ -211,7 +211,7 @@ The existing owner test character is not permission to alter normal saves.
   nor completes the quest.
 - Crossbow + bolts supplies Leadcrow and 250 bolts for any class; Blood Moor
   supplies an outdoor test destination. Compare existing versus explicit Attack
-  on Right Trigger. Release Right Grip: Right Grip + Right Trigger shows loot.
+  on Right Trigger. Hold the right stick down to show loot labels.
 - Do not hold developer status locks across native dispatch or item operations.
   Those calls can pump rendering/UI; an earlier travel hang came from that lock.
 

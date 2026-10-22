@@ -7,12 +7,14 @@ namespace framevr::settings {
 // transparent strip on its right in the same atlas/composition layer.
 constexpr int HelpGap=24,HelpWidth=440,AtlasWidth=Width+HelpGap+HelpWidth;
 constexpr Rect HelpCard{Width+HelpGap,242,HelpWidth-24,612};
-constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3,HelpMonoAudio=Count+4;
+constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3,HelpMonoAudio=Count+4,
+              HelpPerformance=Count+5,HelpGameVideo=Count+6,HelpLast=HelpGameVideo;
 inline const char* HelpTitle(int id) {
     if(id>=0&&id<Count)return Definitions[id].label;
     switch(id){case HelpApply:return "Apply";case HelpClose:return "Close";
         case HelpRecenter:return "Reset eye height";case HelpCalibrate:return "Calibrate body";
-        case HelpMonoAudio:return "Windows Mono audio";default:return "";}
+        case HelpMonoAudio:return "Windows Mono audio";
+        case HelpPerformance:return "Frame times now";case HelpGameVideo:return "The game's graphics options";default:return "";}
 }
 inline const char* HelpText(int id) {
     switch(id) {
@@ -52,17 +54,25 @@ inline const char* HelpText(int id) {
         case MapTopDown:return "The wrist minimap's view. The gold arrow shows your facing direction. Apply saves your choice.";
         case MapRotate:return "In Top-down view, Off keeps north at the top and turns the arrow with you. On rotates the map so your facing direction stays at the top. This has no effect in Isometric view; your choice is kept for the next time you use Top-down. Apply saves it.";
         case OrdinaryMobBars:return "Shows names and health bars for ordinary enemies. Turn it Off to reduce clutter. Boss and elite bars remain visible.";
-        case MenuDistance:return "How far away eye-level game panels, such as inventory and merchant menus, appear. This does not move this VR Settings panel.";
+        case MenuDistance:return "How far away eye-level game panels, such as inventory and merchant menus, appear. You can also point at a game menu, hold Right Grip and push or pull it; menus reopen at that distance until you change this setting or restart. This does not move this VR Settings panel; grab it with Right Grip to move, push, pull or tilt it.";
         case TooltipTiming:return "How soon item details appear when you point the laser at an item in a game panel.";
         case MeleeRules:return "How your physical melee strokes deal damage.";
         case CompanionCounts:return "Shows companion counts and effects currently affecting your character below the left-hand minimap. This includes received buffs, auras and harmful effects, not just assigned skills. It follows Minimap & Compass placement.";
         case OfflinePlayers:return "Uses native offline Players 1-8 scaling for tougher monsters and increased experience and loot. Apply affects newly spawned monsters; existing monsters keep their current stats. For all monsters to use the new value, Save and Exit, then start a new game with the same character. Game default follows the game's own setting. Works with every class and either melee mode. Does not change Normal, Nightmare or Hell, or your desktop preference.";
         case StrainSpeed:return "How quickly blocked hits build the shield strain vignette in Unleashed. Strain starts fading a moment after hits stop, or as soon as you lower the shield; full strain is gone about 3 seconds after the last hit.";
-        case StrainDark:return "The color of the edge effect as repeated blocks strain your guard in Unleashed. It clears when hits stop for a few seconds or you lower your shield.";
-        case TargetOutlineColour:return "Static: every outline in the Static color below. By range: red near, orange mid-range, yellow far, so you can tell at a glance how close the monster you aim at is. Select the value to switch.";
-        case TargetOutlineHue:return "The Static color, around the color wheel 15 degrees at a time; gold by default. A color unlike the monster's own reads best: red is hard to see on red monsters.";
-        case TargetHighlight:return "A thin, steady outline round the monster you are aiming at. Off by default; the percentage sets how strongly it shows. Monster outline color chooses gold or a color by distance. While your arm is held out, the monster your hand points at is chosen; when your hand points at none, the monster you look at is. Only monsters in your line of sight count. The outline is a guide only: it does not change how attacks or spells aim.";
+        case StrainDark:return "The color of the edge effect as repeated blocks strain your guard in Unleashed, or Off to hide it. It clears when hits stop for a few seconds or you lower your shield. Off hides only the effect: strain, guard breaks and chip damage still apply.";
+        case TargetHighlight:return "A thin, steady outline round the monsters you aim at. Off by default; the percentage sets how strongly it shows. A hand held out picks the monster it points at; with no hand on one, the monster you look at is outlined. Monster highlights and the hand colors below choose which show and how; the one you look at takes the color of the hand that would cast at it. Only monsters in sight count. A guide only: it does not change how skills aim.";
+        case AimHighlights:return "Which aimed monsters are outlined. A button you hold keeps showing the monster its cast took until you let go. Greyed out while the Monster outline is Off.";
+        case HighlightRight:return "The outline color of the monster your right hand points at, and of the monster you look at when the right hand would cast at it (Dominant hand Right, no bow equipped). By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; gold by default. A color unlike the monster's own reads best. Greyed out while the Monster outline is Off.";
+        case HighlightLeft:return "The outline color of the monster your left hand points at, and of the monster you look at when the left hand would cast at it (a bow equipped, or Dominant hand Left). By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; blue by default. A color unlike the monster's own reads best. Greyed out while the Monster outline is Off.";
+        case SpellLock:return "Skills take the monster your casting hand points at (arm held out a tenth of your Controller span), else the other hand's, else the one you look at, and keep it until you let go. Bolts fly at it; curses and Corpse Explosion land on it. With no monster, where that arm points, else where you look.";
+        case StaffPoint:return "A staff held upright would cast along its shaft, straight up. With this On, an upright staff casts along your arm, from your shoulder through your hand, so a bent wrist, knuckles to the side or a hand overhead still cast where you reach. Levelled out like a wand (within about 35 degrees of flat), it casts from its top as before.";
+        case LandingCircles:return "Shows where a ground skill will hit once the game accepts the cast, in its element's color: fire orange, cold blue, lightning yellow. The circle fills from the centre outward until the skill lands: a Fire Blast bomb over its flight, Meteor over its fall, Blizzard while the ice falls. Fire Wall shows as a strip across your aim. Floor only, never monsters' legs or walls. Greyed out while Ground skills is Game.";
+        case GroundAim:return "Where ground skills land: Fire Blast and traps, Blizzard, Meteor, Fire Wall, Hydra, Fissure, Volcano, Bone Wall and Bone Prison. Aimed at the horizon or above, as far as the game lets a skill be cast.";
+        case BowLaser:return "At full draw a faint line runs from the arrow's tip along the path a release would fly, ending in a brighter dot at the floor or fading out after 15 m. It doesn't stop at walls or monsters. Shown for basic arrows and Magic, Fire, Cold, Ice, Exploding, Immolation and Freezing Arrow; not Multiple Shot, Guided Arrow, Strafe or crossbows. Off by default, else its color in 15-degree steps from red 0; past 345 comes Off, both ways.";
+        case LootPick:return "With several items on the floor, which one Interact (A) picks up. Point at an item with your aiming arm held out, or with the arm resting just look at it. A's reach without walking is 5.5 cells. Doors, chests, waypoints and NPCs work as before. Off by default.";
         case HeartbeatStart:return "The life percentage where the low-life heartbeat begins. Below it the heartbeat steps up every 10% of life you lose, louder and faster, until it is at full strength below 10%. 60% is the default; Off silences it. Healing winds it back down beat by beat; wiping the visor clean fades it until the next hit. Works in Unleashed and Classic.";
+        case EnemySight:return "Scales how far away hostile monsters notice and approach you in offline VR, from 100% (game default) up to 300% (three times as far). 100% keeps the game's original sight distance and restores the unmodified table values. Friendly NPCs, mercenaries and summons are unchanged.";
         case MeleeHitSpeed:return "Minimum weapon movement speed for a swing to count as a strike. Lower it for easier swings; raise it to require faster movement. Default: 12 m/s. Both melee modes use this value. Shield bash has its own threshold.";
         case ShieldBashSpeed:return "Minimum tracked hand speed for a physical shield bash, including assigned Smite. Default: 2 m/s. Move the hand at least 12 cm in one deliberate stroke; wrist twisting alone does not attack. The speed must still be met at contact. Applies in both melee modes; blocking, parries and trigger attacks are unchanged.";
         case MeleeThrustSpeed:return "Minimum forward speed for a stab along your weapon's tip. Default: 2 m/s. Move forward at least 12 cm, then pull back before stabbing again. This is separate from swing speed and applies in both melee modes.";
@@ -77,6 +87,10 @@ inline const char* HelpText(int id) {
         case HapticAlert:return "Strength of low-health and low-mana warning vibration on the left controller. Actual warnings also require Low health / mana alerts under HUD to be On. Test previews the vibration even when warnings are disabled.";
         case BloodVisor:return "Shows peripheral blood splatters as life falls below 60%, 40% and 20%. Healing back above each threshold fades that layer. Face wipe gesture lets you clear splatters by hand.";
         case BloodWipe:return "With blood on the visor, move either hand side to side in front of your face with that hand's trigger released. Successful wipes remove blood with vibration. This does not restore health.";
+        case ElementalHands:return "A Sorceress's hands each show a small copy of their trigger skill's look, made from the spell's own effects in your game: flames, lightning flashes or ice, switching while you hold a spell shortcut. Supported hand spells flare it as they cast; the spells you cast are unchanged. Experimental: it is drawn over the picture, so it can show through your weapon or a wall. Other classes see nothing.";
+        case ReShadeDepth:return "ReShade's built-in Generic Depth add-on looks at every draw call the game makes to find its depth. In VR the mod gives the fog and sky its own depth, so in the game world the add-on is not needed. Off saves its work on each draw; on the flat menu panel and outside VR the fog and sky then have no depth. ReShade reads this when it starts: changes apply after you restart the game.";
+        case HelpPerformance:return "The last second of headset frames. Drawing: the game preparing one eye (By turns) or both; it grows with what is in view, draw distances and shadows, hardly with resolution. Game: its update between frames. VR: the mod's own work. Headset wait: the runtime holding the frame for the next refresh. Past the headset's frame (11.1 ms at 90 Hz), late frames wait a whole refresh: up to half the frame rate.";
+        case HelpGameVideo:return "The game's own graphics options, as it saved them (Options > Video, then close the menu). Shadows, character detail and lights add drawing work for the CPU; ambient occlusion (AO), atmospherics and scale cost the graphics card. Change them in the game's Options > Video; the numbers are the game's own, 0 its lowest.";
         case HelpApply:return "Saves your pending changes and applies them. Your other saved settings and calibration are preserved. Changes stay as a draft until you press Apply.";
         case HelpClose:return "Returns to the game and discards changes you have not applied. Right B also closes this panel. The world continues running while VR Settings is open.";
         case HelpRecenter:return "Resets the current eye-height reference for your play position. This is separate from measuring your body and does not replace your saved body calibration.";
@@ -95,12 +109,15 @@ struct ChoiceHelp {const char* name=nullptr;const char* text=nullptr;};
 constexpr int HelpChoiceGap=18,HelpChoiceNameHeight=40;   // on the card: above the name, the name's line
 inline int HelpChoices(int id) {
     switch(id) {
-        case Foveation:case MenuDistance:case TooltipTiming:case StrainSpeed:case ProjectileAimAssist:return 3;
+        case Foveation:case MenuDistance:case TooltipTiming:case StrainSpeed:case ProjectileAimAssist:case StrainDark:return 3;
         case FoveationStrength:case VitalsLocation:case NavigationLocation:return 4;
         case StereoRendering:return int(std::size(StereoRenderingNames));
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
-        case Dominant:case MeleeRules:case StrainDark:case MapTopDown:return 2;
+        case Dominant:case MeleeRules:case MapTopDown:case AimHighlights:return 2;
+        case GroundAim:return int(std::size(GroundAimNames));
+        case LootPick:return int(std::size(LootPickNames));
+        case SpellLock:return int(std::size(SpellLockNames));
         default:return 0;
     }
 }
@@ -126,8 +143,7 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         case StereoRendering:{
             static constexpr const char* text[]={
                 "The game draws each frame twice, once per eye, from the same moment. Accurate 3D, and the most CPU and GPU work per frame.",
-                "One eye per frame, alternating; the other eye's last image is turned to your head and moved with the scene's depth. About half the drawing work, but moving monsters can look doubled and the edges of nearby things may smear.",
-                "The game draws each frame once, for the left eye, and the graphics card draws it again for the right eye: both eyes from one moment for about one eye's CPU work. Starts a few seconds into an area and pauses while an area loads."};
+                "One eye per frame, alternating; the other eye's last image is turned to your head and moved with the scene's depth. About half the drawing work, but moving monsters can look doubled and the edges of nearby things may smear."};
             return {StereoRenderingNames[c],text[c]};}
         case RenderResolution:{
             static constexpr const char* text[]={
@@ -180,6 +196,30 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "Item details appear after the laser rests on an item for 300 ms.",
                 "Item details use the game's own timing."};
             return {TooltipTimingNames[c],text[c]};}
+        case SpellLock:{
+            static constexpr const char* text[]={
+                "Spells and bow skills aim along the casting hand, as before.",
+                "Spells go to the aimed monster; bow skills aim as before.",
+                "Bow skills cast from a button go to the aimed monster, the bow hand's first; spells aim as before.",
+                "Spells and bow skills go to the aimed monster."};
+            return {SpellLockNames[c],text[c]};}
+        case GroundAim:{
+            static constexpr const char* text[]={
+                "The game aims ground skills its own way, as before: Bone Wall and Prison where your hand points at the floor.",
+                "On the floor where your casting hand points, held out or not, with a landing circle.",
+                "On the monster your hands or eyes aim at (Bone Wall in front of it), else where you point, with a landing circle."};
+            return {GroundAimNames[c],text[c]};}
+        case LootPick:{
+            static constexpr const char* text[]={
+                "A takes the item the game chooses, the one nearest the hero, as before.",
+                "A takes the item you point at, else the one you look at. Past A's reach it is left alone, not walked to.",
+                "As On, and that item glows along its outline in its rarity color, red when out of reach; its name, when shown, gets a frame."};
+            return {LootPickNames[c],text[c]};}
+        case AimHighlights:{
+            static constexpr const char* text[]={
+                "One outline: the monster your dominant hand (VR > Dominant hand) points at, else the one you look at.",
+                "Each hand's monster has its own outline in its own color; with neither hand on one, the monster you look at."};
+            return {HighlightsNames[c],text[c]};}
         case Dominant:{
             static constexpr const char* names[]={"Right","Left"};
             static constexpr const char* text[]={
@@ -200,12 +240,13 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         case StrainDark:{
             static constexpr const char* text[]={
                 "A pale glow at the edges of your view.",
-                "A dark vignette at the edges of your view."};
+                "A dark vignette at the edges of your view.",
+                "No vignette. Strain still builds and can break your guard; you just do not see it."};
             return {StrainColorNames[c],text[c]};}
         default:return {};
     }
 }
-inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr,bool monoAudio=false) {
+inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr,bool monoAudio=false,const Context* context=nullptr) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return NoHelp;
     if(monoAudio&&MonoAudioBox.Contains(u*Width,v*Height))return HelpMonoAudio;
     // Do not explain controls hidden behind an open dropdown.
@@ -216,7 +257,11 @@ inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Valu
     if(Recenter.Contains(x,y))return HelpRecenter;
     if(Calibrate.Contains(x,y))return HelpCalibrate;
     if(page==Page::VR&&ControllerBox.Contains(x,y))return ControllerLabels;
-    if(page==Page::Video&&VideoDeferBox.Contains(x,y)&&(!values||DeferOffered(*values)))return DeferGpuWait;
+    if(page==Page::Performance){
+        if(DeferBox.Contains(x,y)&&(!values||DeferOffered(*values)))return DeferGpuWait;
+        if(PerformanceBox.Contains(x,y))return HelpPerformance;
+        if(GameVideoBox.Contains(x,y))return HelpGameVideo;
+    }
     if(page==Page::HUD){
         if(Rect{40,181,570,52}.Contains(x,y))return MapTopDown;
         if(Rect{650,181,590,52}.Contains(x,y))return MapRotate;
@@ -226,8 +271,9 @@ inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Valu
         if(Rect{40,728,1200,52}.Contains(x,y))return PlanarSpellAim;
         if(Rect{40,790,1200,52}.Contains(x,y))return ProjectileAimAssist;
     }
-    for(int row=0;row<RowCount(page);++row)
-        if(Rect{40,RowY+row*RowStep-4,1200,RowStep}.Contains(x,y))return RowKey(page,row);
+    const RowList rows=Rows(page,values?*values:Defaults(),context?*context:Context{});
+    for(int row=0;row<rows.count;++row)   // a paired row: its right half explains the right setting
+        if(Rect{40,RowY+row*RowStep-4,1200,RowStep}.Contains(x,y))return Paired(rows[row])&&x>=PairX(1)-PairGap/2?PairOf(rows[row]):rows[row];
     return NoHelp;
 }
 class HoverHelp {
