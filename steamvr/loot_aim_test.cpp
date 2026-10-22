@@ -97,5 +97,30 @@ int main() {
     Check(cells[0]==101&&cells[1]==200&&cells[2]==99&&cells[3]==201&&hx==100&&hy==200,"their cells and the hero's");
     Check(Collect(hero,read,units,cells,1,hx,hy)==1,"never more than asked for");
     Check(Collect(0x123000,read,units,cells,MaxItems,hx,hy)==0,"no hero path: nothing");
+
+    // A fresh walk confirms a pick before it goes to the game.
+    Check(Contains(hero,read,0x600000)&&Contains(hero,read,0x800000),"items still on the floor are there");
+    Check(!Contains(hero,read,0x900000),"an item no longer on the floor is not");
+    Check(!Contains(hero,read,0x700000)&&!Contains(hero,read,0x123456)&&!Contains(hero,read,0),"a monster, a unit not in the rooms, none: not");
+    m.Unit(0x600000,4,4,0x610000,0x700000);   // picked up: on the cursor now
+    Check(!Contains(hero,read,0x600000),"picked up: not there any more");
+    Check(Collect(hero,read,units,cells,MaxItems,hx,hy)==1,"nor collected");
+
+    // The walk stops at the sewer search's limits, even on a list that loops.
+    Memory loop;
+    loop.Put(hero+0x38,heroPath);loop.Put(heroPath,heroXy);loop.Put(heroPath+0x20,room);
+    loop.Put(room,list);loop.Put(room+0x40,uint32_t(1));loop.Put(list,room);
+    loop.Put(room+0xa8,uintptr_t(0x600000));
+    loop.Unit(0x600000,1,1,0x610000,0x601000);loop.Unit(0x601000,1,1,0x611000,0x600000);   // two units linked to each other
+    auto readLoop=[&](uintptr_t at,auto& value){return loop.Read(at,value);};
+    Check(Walk(hero,readLoop,[](uintptr_t,const uint32_t*){return true;},hx,hy)==MaxChain,"a looping list stops at 256 a room");
+
+    // The pick is usable only while on the floor, in the same area, and fresh.
+    Check(Usable(4,3,true,0)&&Usable(4,5,true,MaxPickAgeMs-1),"on the ground or dropping, same area, fresh");
+    Check(!Usable(4,4,true,0)&&!Usable(4,0,true,0)&&!Usable(1,3,true,0),"on the cursor, stored, a monster: no");
+    Check(!Usable(4,3,false,0)&&!Usable(4,3,true,MaxPickAgeMs),"another area or too old: no");
+    const Area here{0x100000,2,7};
+    Check(SameArea(here,here)&&SameArea(here,{0x100000,0,7})&&SameArea({0x100000,0,7},here),"an unknown area id is not compared");
+    Check(!SameArea(here,{0x100000,3,7})&&!SameArea(here,{0x100000,2,8})&&!SameArea(here,{0x200000,2,7}),"another id, look or hero: another area");
     std::puts("loot aim tests passed");
 }

@@ -4259,13 +4259,15 @@ void ApplyActions(XINPUT_STATE* s) {
 // the game's nearest (lootaim). Chosen on the game thread from InteractTarget,
 // which runs every world frame; the room walk runs every 100 ms.
 void LabelNameOf(uintptr_t unit, char* out, size_t size);
+bool SewerInteractionLayoutReady();
 namespace lootaimvr {
 uintptr_t g_units[framevr::lootaim::MaxItems];
 float g_cells[framevr::lootaim::MaxItems * 2];
 int g_count = 0;
 float g_heroX = 0, g_heroY = 0;
 ULONGLONG g_scanAt = 0;
-uintptr_t g_pick = 0;
+framevr::lootaim::Area g_area;            // the area the last walk saw (g_units and the pick belong to it)
+std::atomic<uintptr_t> g_pick{0};
 bool g_pointing = false;
 std::atomic<ULONGLONG> g_pickAt{0};       // when HandItem last chose
 std::atomic<float> g_pickCells{-1.0f};    // the pick's distance from the hero, in cells (-1 none)
@@ -4307,22 +4309,75 @@ uintptr_t Hero() {
     return 0;
 }
 
+// The area now, without the hero unit (cheap: every frame).
+framevr::lootaim::Area AreaNow(uintptr_t hero) {
+    return {hero, interactionstate::CurrentLevel(gamestate::LocalPlayer(), GetTickCount64()), g_biomeGen.load()};
+}
+// Another area (or hero) than the last walk's: its units may be freed, so drop
+// them and the pick, and walk again now.
+void ForgetIfMoved() {
+    const auto now = AreaNow(g_area.hero);
+    if (framevr::lootaim::SameArea(now, g_area)) { if (now.level) g_area.level = now.level; return; }
+    if (g_count || g_pick.load()) Log("Frame loot aim: another area - the items and the pick are dropped");
+    g_count = 0; g_pick.store(0); g_scanAt = 0; g_area = now;
+}
+
 void Scan() {
+    ForgetIfMoved();
     const ULONGLONG now = GetTickCount64();
     if (now - g_scanAt < 100) return;
     g_scanAt = now;
     const uintptr_t hero = Hero();
-    const int count = hero ? framevr::lootaim::Collect(hero, [](uintptr_t at, auto& value) { return Rd(at, value); },
-                                                       g_units, g_cells, framevr::lootaim::MaxItems, g_heroX, g_heroY) : 0;
-    static bool toldHero = true;
-    if (!hero != !toldHero) {
-        toldHero = hero != 0;
-        Log(hero ? "Frame loot aim: hero unit found - dropped items near the hero can be picked by pointing or looking"
-                 : "Frame loot aim: hero unit not found yet - the game's own loot pick");
+    // The room links are the sewer warp search's, checked against the game's own code first.
+    const bool layout = hero && SewerInteractionLayoutReady();
+    const auto area = AreaNow(hero);
+    if (!framevr::lootaim::SameArea(area, g_area)) g_pick.store(0);   // another hero unit: a new game
+    g_area = area;
+    const int count = layout ? framevr::lootaim::Collect(hero, [](uintptr_t at, auto& value) { return Rd(at, value); },
+                                                         g_units, g_cells, framevr::lootaim::MaxItems, g_heroX, g_heroY) : 0;
+    static int toldHero = -1;
+    const int state = !hero ? 0 : layout ? 1 : 2;
+    if (state != toldHero) {
+        toldHero = state;
+        Log(state == 1 ? "Frame loot aim: hero unit found - dropped items near the hero can be picked by pointing or looking"
+            : state == 2 ? "Frame loot aim: the room layout is not verified on this game version - the game's own loot pick"
+                         : "Frame loot aim: hero unit not found yet - the game's own loot pick");
     }
     static int told = -1;
-    if ((count > 0) != (told > 0)) { told = count; LogF("Frame loot aim: %d dropped items near the hero", count); }
+    if ((count > 0) != (told > 0) || told < 0) { told = count; LogF("Frame loot aim: %d dropped items near the hero", count); }
     g_count = count;
+}
+
+// Still an item on the floor? A read through ReadProcessMemory, safe on freed memory.
+bool OnFloor(uintptr_t unit) {
+    uint32_t header[4] = {};
+    return unit && Rd(unit, header) && framevr::lootaim::OnFloor(header[0], header[3]);
+}
+// The pick may go to the game: on the floor, in the walk's area, chosen just now.
+bool Usable(uintptr_t pick) {
+    if (!pick) return false;
+    uint32_t header[4] = {};
+    if (!Rd(pick, header)) return false;
+    const bool same = framevr::lootaim::SameArea(AreaNow(g_area.hero), g_area);
+    return framevr::lootaim::Usable(header[0], header[3], same, GetTickCount64() - g_pickAt.load());
+}
+// Once per press (and at most every 100 ms), a fresh walk of the hero's rooms must
+// still find the pick on the floor before Interact is handed it (like ClientMonster).
+bool Confirmed(uintptr_t pick) {
+    static thread_local uintptr_t checked = 0;
+    static thread_local ULONGLONG checkedAt = 0;
+    static thread_local bool found = false;
+    const ULONGLONG now = GetTickCount64();
+    if (pick != checked || now - checkedAt >= 100) {
+        checked = pick; checkedAt = now;
+        found = g_area.hero && framevr::lootaim::Contains(g_area.hero, [](uintptr_t at, auto& value) { return Rd(at, value); }, pick);
+        if (!found) {
+            g_scanAt = 0;   // walk again on the next frame
+            static ULONGLONG told = 0;
+            if (now - told > 1000) { told = now; LogF("Frame loot aim: the pick %p is gone from the floor - not handed to the game", (void*)pick); }
+        }
+    }
+    return found;
 }
 
 // The look's ray for loot: the left eye's forward lowered a little (the eyes look
@@ -4349,7 +4404,12 @@ bool Pointing() {
 
 // The item Interact takes, or 0 (off, or nothing picked).
 uintptr_t HandItem() {
-    if (!On()) { g_pick = 0; return 0; }
+    if (!On()) {
+        g_pick.store(0);
+        if (!LootPickOn()) g_lootWantsHero.store(false);   // Off: the facing hook stops looking for the hero for us
+        return 0;
+    }
+    if (g_pick.load() && !OnFloor(g_pick.load())) g_scanAt = 0;   // picked up: walk again now
     Scan();
     namespace la = framevr::lootaim;
     AcquireSRWLockShared(&g_skyLock); const SkyView s = g_skyView[0]; ReleaseSRWLockShared(&g_skyLock);
@@ -4365,34 +4425,37 @@ uintptr_t HandItem() {
     if (Pointing() && HandRay(o, d)) hand = {{o[0], o[1], o[2]}, {d[0], d[1], d[2]}, true};
     LookAim(look);
     const bool held = (ActionsHeld() & D2RVR_ACT_INTERACT) != 0;
-    const uintptr_t was = g_pick;
-    const auto c = la::Select(items, n, hand, look, g_pick, held);
-    g_pick = c.unit;
+    const uintptr_t was = g_pick.load();
+    const auto c = la::Select(items, n, hand, look, was, held);
+    const uintptr_t pick = c.unit;
+    g_pick.store(pick);
     g_pickAt.store(GetTickCount64());
     float cells = -1.0f;
-    for (int i = 0; i < n && g_pick; ++i) if (items[i].unit == g_pick) cells = items[i].heroCells;
+    for (int i = 0; i < n && pick; ++i) if (items[i].unit == pick) cells = items[i].heroCells;
     g_pickCells.store(cells);
-    if (g_pick && g_pick != was) {
+    if (pick && pick != was) {
         static ULONGLONG lastLog = 0;
         if (GetTickCount64() - lastLog > 1000) {
             lastLog = GetTickCount64();
-            char name[48]; LabelNameOf(g_pick, name, sizeof name);
+            char name[48]; LabelNameOf(pick, name, sizeof name);
             // the item data the glow's color comes from (+0x10: quality, flags +0x18), to check against its name's color
             uintptr_t data = 0;
             uint32_t quality = 0, flags = 0;
-            if (Rd(g_pick + 0x10, data)) { Rd(data, quality); Rd(data + 0x18, flags); }
+            if (Rd(pick + 0x10, data)) { Rd(data, quality); Rd(data + 0x18, flags); }
             LogF("Frame loot aim: %s picks '%s' %p quality %u flags 0x%x (%d items near, %.2f units off the aim, %.1f cells from the hero%s)",
-                 c.byHand ? "hand" : "look", name, (void*)g_pick, quality, flags, n, c.distance, cells,
+                 c.byHand ? "hand" : "look", name, (void*)pick, quality, flags, n, c.distance, cells,
                  la::InReach(cells, g_set.lootPickReach.load()) ? "" : ", past the pick-up reach");
         }
     }
-    return g_pick;
+    return Usable(pick) && Confirmed(pick) ? pick : 0;   // the prompt and A get only a live item
 }
 
-// The pick while fresh, for the Interact skill's target (0x18DDE0).
+// The pick while fresh and still on the floor, for the Interact skill's target
+// (0x18DDE0), confirmed by a fresh walk before the game gets it.
 uintptr_t Selected() {
     if (!On()) return 0;
-    return GetTickCount64() - g_pickAt.load() < 200 ? g_pick : 0;
+    const uintptr_t pick = g_pick.load();
+    return Usable(pick) && Confirmed(pick) ? pick : 0;
 }
 // Close enough for A to pick it up without walking ([interactions] loot_pick_reach_cells, 0 = any).
 bool PickInReach() { return framevr::lootaim::InReach(g_pickCells.load(), g_set.lootPickReach.load()); }
@@ -6081,11 +6144,14 @@ void RememberLabel(const void* box, const char* name, uintptr_t unit) {
     snprintf(owner.text, sizeof owner.text, "%s", n);
     ReleaseSRWLockExclusive(&g_labelOwnerLock);
 }
+// The box first: a name buffer the game reuses must not give every label the first record's unit.
 uintptr_t LabelUnit(const void* box, const void* name) {
     uintptr_t unit = 0;
     AcquireSRWLockShared(&g_labelOwnerLock);
     for (int i = 0; i < kLabelOwners && !unit; ++i)
-        if (g_labelOwners[i].box == box || (name && g_labelOwners[i].name == name)) unit = g_labelOwners[i].unit;
+        if (g_labelOwners[i].box == box) unit = g_labelOwners[i].unit;
+    for (int i = 0; i < kLabelOwners && !unit && name; ++i)
+        if (g_labelOwners[i].name == name) unit = g_labelOwners[i].unit;
     ReleaseSRWLockShared(&g_labelOwnerLock);
     return unit;
 }
