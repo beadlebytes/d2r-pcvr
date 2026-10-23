@@ -1,4 +1,5 @@
 #include "vr_settings_help.h"
+#include "../vr/shield_pose.h"
 #include "reshade_addons.h"
 #include <cmath>
 #include <cstdio>
@@ -84,8 +85,10 @@ int main(){
               RowKey(Page::Performance,1)==RenderResolution&&RowKey(Page::Performance,7)==DesktopOneEye,"strength sits directly under foveated rendering");
         Check(RowKey(Page::Performance,0)==StereoRendering&&RowKey(Page::Performance,2)==DrawDistance&&RowKey(Page::Performance,3)==ObjectDistance&&
               RowKey(Page::Performance,6)==ReShadeDepth,"everything that changes the frame rate is on the Perf page");
-        Check(RowCount(Page::Video)==4&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
-              RowKey(Page::Video,3)==ElementalHands,"the Video page keeps the mod's effects");
+        Check(RowCount(Page::Video)==6&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
+              RowKey(Page::Video,3)==ElementalHands&&RowKey(Page::Video,4)==BottlePhysics&&RowKey(Page::Video,5)==PropPhysics,
+              "the Video page keeps the mod's effects, with bottle and prop physics");
+        Check(Defaults()[BottlePhysics]==1&&Defaults()[PropPhysics]==1,"both physics switches start on, as their INI defaults");
         const auto last=Increase(RowCount(Page::Performance)-1);
         Check(last.y+last.h<PerformanceBox.y&&PerformanceBox.y+PerformanceBox.h<=GameVideoBox.y&&GameVideoBox.y+GameVideoBox.h<=DepthRestartBox.y&&
               DepthRestartBox.y+DepthRestartBox.h<876,"Perf rows, then its numbers, end above the save status");
@@ -323,7 +326,7 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==8&&RowKey(Page::Combat,3)==ShieldBashSpeed,"eight Combat rows retain independent bash speed; parry window is fixed");
+        Check(RowCount(Page::Combat)==9&&RowKey(Page::Combat,3)==ShieldBashSpeed,"nine Combat rows retain independent bash speed; parry window is fixed");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
@@ -355,6 +358,53 @@ int main(){
         Check(speed.Get()[StrainSpeed]==2,"plus selects Fast");
         speed.Click(At(speed,Page::Combat,PairIncrease(4,1)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
+    }
+    {Model shield;shield.Open(s);shield.Click({Kind::Tab,int(Page::Shield)});
+        Check(CatalogCount(Page::Shield)==5&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp&&
+              RowKey(Page::Shield,3)==ShieldFollow&&RowKey(Page::Shield,4)==ShieldRoll,"the Shield page holds grip, out, up, follows and roll");
+        Check(ValueBox(CatalogCount(Page::Shield)-1).y+ValueBox(0).h<=Apply.y&&CatalogCount(Page::Shield)<=RowCount(Page::HUD),"five Shield rows fit above Apply, as the ten-row pages do");
+        Check(HelpAt(Page::Shield,(ValueBox(3).x+5.f)/Width,(ValueBox(3).y+5.f)/Height)==ShieldFollow&&HelpAt(Page::Shield,(ValueBox(4).x+5.f)/Width,(ValueBox(4).y+5.f)/Height)==ShieldRoll,
+              "Shield follows and Shield roll explain themselves");
+        Check(Definitions[ShieldFollow].section==std::wstring_view(L"gameplay")&&Definitions[ShieldFollow].key==std::wstring_view(L"shield_follow_pct")&&
+              Definitions[ShieldRoll].section==std::wstring_view(L"gameplay")&&Definitions[ShieldRoll].key==std::wstring_view(L"shield_roll_deg"),"follows and roll keep their INI keys");
+        Check(s.values[ShieldFollow]==skel::shield::kFollowDefaultPct&&s.values[ShieldRoll]==0&&Definitions[ShieldFollow].defaultValue==skel::shield::FollowSetting(NAN)&&
+              Definitions[ShieldRoll].defaultValue==skel::shield::RollSetting(NAN),"follows 50% and roll 0 by default, as the pose reads an unset value");
+        Check(Definitions[ShieldFollow].min==0&&Definitions[ShieldFollow].max==skel::shield::kFollowMaxPct&&Definitions[ShieldFollow].step==skel::shield::kFollowStepPct&&
+              Definitions[ShieldRoll].min==-skel::shield::kRollMaxDeg&&Definitions[ShieldRoll].max==skel::shield::kRollMaxDeg&&Definitions[ShieldRoll].step==skel::shield::kRollStepDeg,
+              "follows and roll span the pose's range in its own steps");
+        for(float v:{-500.f,-181.f,-93.f,-7.f,-1.f,0.f,2.f,3.f,34.f,35.f,92.f,93.f,101.f,179.f,500.f}){
+            Check(Normalize(ShieldFollow,v)==skel::shield::FollowSetting(v),"Shield follows normalizes as the pose snaps it");
+            Check(Normalize(ShieldRoll,v)==skel::shield::RollSetting(v),"Shield roll normalizes as the pose snaps it");
+        }
+        Check(Normalize(ShieldFollow,NAN)==50&&Normalize(ShieldRoll,NAN)==0&&!std::signbit(Normalize(ShieldRoll,-1)),"unreadable values fall back; no -0 degrees");
+        {Model turn;turn.Open(s);turn.Click({Kind::Tab,int(Page::Shield)});
+            turn.Click(At(Page::Shield,Increase(3)));turn.Click(At(Page::Shield,Decrease(4)));
+            Check(turn.Get()[ShieldFollow]==60&&turn.Get()[ShieldRoll]==-5,"follows steps 10%, roll 5 degrees");
+            for(int i=0;i<20;++i)turn.Click(At(Page::Shield,Increase(3)));
+            for(int i=0;i<50;++i)turn.Click(At(Page::Shield,Decrease(4)));
+            Check(turn.Get()[ShieldFollow]==100&&turn.Get()[ShieldRoll]==-180,"follows stops at 100% (Wrist), roll at -180");
+            for(int i=0;i<20;++i)turn.Click(At(Page::Shield,Decrease(3)));
+            for(int i=0;i<80;++i)turn.Click(At(Page::Shield,Increase(4)));
+            Check(turn.Get()[ShieldFollow]==0&&turn.Get()[ShieldRoll]==180,"follows stops at 0% (Forearm), roll at +180");
+            const auto request=turn.Click({Kind::Apply});
+            Check(request.changed==((ChangeMask{1}<<ShieldFollow)|(ChangeMask{1}<<ShieldRoll))&&request.values[ShieldFollow]==0&&request.values[ShieldRoll]==180,
+                  "follows and roll save through their own mask bits, nothing else");
+        }
+        Check(s.values[ShieldGrip]==0&&s.values[ShieldOut]==0&&s.values[ShieldUp]==0,"the shield keeps its original position (and blocking surface) by default");
+        Check(HelpAt(Page::Shield,(ValueBox(1).x+5.f)/Width,(ValueBox(1).y+5.f)/Height)==ShieldOut,"each Shield row explains itself");
+        shield.Click(At(Page::Shield,Increase(0)));
+        for(int i=0;i<3;++i)shield.Click(At(Page::Shield,Decrease(1)));
+        Check(shield.Get()[ShieldGrip]==1&&shield.Get()[ShieldOut]==-3,"grip steps up by a centimeter; out goes below zero");
+        for(int i=0;i<50;++i)shield.Click(At(Page::Shield,Increase(0)));
+        Check(shield.Get()[ShieldGrip]==40,"grip stops at 40 cm, room for large shields");
+        for(int i=0;i<40;++i)shield.Click(At(Page::Shield,Decrease(1)));
+        Check(shield.Get()[ShieldOut]==-30,"out stops at -30 cm");
+        Check(Normalize(ShieldGrip,-20)==-10&&Normalize(ShieldUp,45)==30&&Normalize(ShieldUp,NAN)==0,"shield offsets clamp to their ranges");
+        Check(Definitions[ShieldGrip].min==skel::shield::kGripMinCm&&Definitions[ShieldGrip].max==skel::shield::kGripMaxCm&&Definitions[ShieldOut].min==-skel::shield::kSideMaxCm&&
+              Definitions[ShieldOut].max==skel::shield::kSideMaxCm&&Definitions[ShieldUp].min==-skel::shield::kSideMaxCm&&Definitions[ShieldUp].max==skel::shield::kSideMaxCm&&
+              Definitions[ShieldGrip].step==1&&Definitions[ShieldOut].step==1&&Definitions[ShieldUp].step==1,"the Shield rows span what the pose accepts, 1 cm a step");
+        const auto request=shield.Click({Kind::Apply});
+        Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)),"shield edits change nothing else");
     }
     {Model laser;laser.Open(s);laser.Click({Kind::Tab,int(Page::Aim)});
         const auto& d=Definitions[BowLaser];
@@ -397,9 +447,11 @@ int main(){
         Check(s.values[ThrowLift]==10&&std::wstring(Definitions[ThrowLift].key)==L"throw_lift_deg"&&Definitions[ThrowLift].min==-10&&
               Definitions[ThrowLift].max==30&&Definitions[ThrowLift].step==5,"[gameplay] throw_lift_deg: 10 degrees up by default, -10 to 30 in 5s");
         auto lit=s.values;lit[TargetHighlight]=50;lit[GroundAim]=1;
-        Check(RowCount(Page::Aim,lit)==10&&RowKey(Page::Aim,3,lit)==AimHighlights&&RowKey(Page::Aim,4,lit)==HighlightLeft&&
-              RowKey(Page::Aim,5,lit)==GroundAim&&RowKey(Page::Aim,6,lit)==LandingCircles&&RowKey(Page::Aim,7,lit)==BowLaser&&RowKey(Page::Aim,8,lit)==ThrowLift&&RowKey(Page::Aim,9,lit)==LootPick,
-              "the outline brings its hands and colors, a placed ground skill its circles");
+        // Unknown class (the menus) with every row brought: 11 rows, the panel holds MaxRows (10), so the loot pick falls off.
+        Check(RowCount(Page::Aim,lit)==MaxRows&&RowKey(Page::Aim,3,lit)==AimHighlights&&RowKey(Page::Aim,4,lit)==HighlightLeft&&
+              RowKey(Page::Aim,5,lit)==GroundAim&&RowKey(Page::Aim,6,lit)==LandingCircles&&RowKey(Page::Aim,7,lit)==AimFollowsView&&
+              RowKey(Page::Aim,8,lit)==BowLaser&&RowKey(Page::Aim,9,lit)==ThrowLift,
+              "the outline brings its hands and colors and Aim follows your view, a placed ground skill its circles");
         Check(Paired(HighlightLeft)&&PairOf(HighlightLeft)==HighlightRight&&std::strcmp(RowLabel(HighlightLeft,{}),"Hand colors")==0,"one row for both hands' colors");
         // Every option that changes how a cast aims is Off by default: the casts aim as before the aim rules (#159 review).
         Check(s.values[SpellLock]==0&&s.values[StaffPoint]==0&&s.values[GroundAim]==0&&s.values[LandingCircles]==1,
@@ -439,7 +491,7 @@ int main(){
                   HelpAt(Page::Aim,(PairValue(4,1).x+5.f)/Width,(PairValue(4,1).y+5.f)/Height,false,&colors.Get())==HighlightRight,"each side explains its own hand");
             float rgb[3];HueRgb(45,rgb);Check(rgb[0]==1&&rgb[1]==.75f&&rgb[2]==0,"45 degrees is gold");}
         Check(HelpAt(Page::Aim,(ValueBox(2).x+5.f)/Width,(ValueBox(2).y+5.f)/Height)==TargetHighlight,"the outline row explains itself");
-        aim.Click(At(aim,Page::Aim,Increase(2)));Check(aim.Get()[TargetHighlight]==10&&aim.Rows().count==9,"plus turns the outline on at 10%, with its rows");
+        aim.Click(At(aim,Page::Aim,Increase(2)));Check(aim.Get()[TargetHighlight]==10&&aim.Rows().count==10,"plus turns the outline on at 10%, with its rows");
         aim.Click(At(aim,Page::Aim,Decrease(2)));aim.Click(At(aim,Page::Aim,Decrease(2)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
         aim.Click(At(aim,Page::Aim,Increase(2)));aim.Click(At(aim,Page::Aim,Increase(2)));
         const auto request=aim.Click({Kind::Apply});
@@ -461,10 +513,30 @@ int main(){
         sorc.Click(At(sorc,Page::Aim,Increase(0)));Check(sorc.Get()[SpellLock]==3,"its plus turns spells on and keeps the Amazon's bow skills");
         sorc.Click(At(sorc,Page::Aim,ValueBox(0)));Check(sorc.Get()[SpellLock]==2,"and the value box off again");
     }
+    {   // Aim follows your view: one On/Off row, Off by default, shown once something takes the aimed monster
+        const auto& d=Definitions[AimFollowsView];
+        Check(std::wstring(d.section)==L"gameplay"&&std::wstring(d.key)==L"aim_follows_view"&&d.defaultValue==0&&d.min==0&&d.max==1&&d.step==1&&
+              Defaults()[AimFollowsView]==0&&std::strcmp(d.label,"Aim follows your view")==0,"[gameplay] aim_follows_view: On or Off, Off by default");
+        auto v=Defaults();
+        Check(!RowShown(AimFollowsView,v,{}),"left out while nothing takes the aimed monster");
+        v[GroundAim]=1;Check(!RowShown(AimFollowsView,v,{}),"Ground skills on Where you point take no monster");
+        for(const Key k:{TargetHighlight,SpellLock,GroundAim}){
+            auto w=Defaults();w[k]=k==GroundAim?2.f:k==TargetHighlight?50.f:1.f;
+            Check(RowShown(AimFollowsView,w,{}),"the outline, Skills go to the aimed monster or Ground skills on Aimed monster bring it");
+        }
+        auto spells=Defaults();spells[SpellLock]=1;
+        Check(RowCount(Page::Aim,spells)==8&&RowKey(Page::Aim,3,spells)==GroundAim&&RowKey(Page::Aim,4,spells)==AimFollowsView&&RowKey(Page::Aim,5,spells)==BowLaser,
+              "below every row that brings it");
+        Check(std::string(HelpText(AimFollowsView)).size()<450&&std::strstr(HelpText(AimFollowsView),"17 degrees")&&std::strstr(HelpText(AimFollowsView),"Off by default"),
+              "its help names the tunnel and fits the card");
+        Model m;auto on=s;on.values[SpellLock]=1;m.Open(on);m.Click({Kind::Tab,int(Page::Aim)});
+        m.Click(At(m,Page::Aim,ValueBox(4)));Check(m.Get()[AimFollowsView]==1,"its value box turns it On");
+        Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<AimFollowsView),"Apply saves only it");
+    }
     {   // Rows follow the character: another class's or weapon's are left out; unknown (the menus) shows them all
         const auto v=Defaults();
         Check(RowShown(ElementalHands,v,{})&&RowShown(ElementalHands,v,{heroclass::Sorceress})&&!RowShown(ElementalHands,v,{heroclass::Amazon}),"elemental hands: the Sorceress's");
-        Check(RowCount(Page::Video,v,{heroclass::Barbarian})==3&&RowCount(Page::Video,v,{heroclass::Sorceress})==4,"the Video page drops them for others");
+        Check(RowCount(Page::Video,v,{heroclass::Barbarian})==5&&RowCount(Page::Video,v,{heroclass::Sorceress})==6,"the Video page drops them for others");
         for(int k:{int(heroclass::Sorceress),int(heroclass::Assassin),int(heroclass::Druid),int(heroclass::Necromancer)})
             Check(RowShown(GroundAim,v,{k}),"ground skills for the classes that have them");
         for(int k:{int(heroclass::Amazon),int(heroclass::Barbarian),int(heroclass::Paladin)})Check(!RowShown(GroundAim,v,{k}),"none for those that do not");
@@ -477,8 +549,8 @@ int main(){
         Check(RowCount(Page::Aim,v,{heroclass::Barbarian})==4&&RowKey(Page::Aim,0,v,{heroclass::Barbarian})==SpellLock&&
               RowKey(Page::Aim,1,v,{heroclass::Barbarian})==TargetHighlight&&RowKey(Page::Aim,2,v,{heroclass::Barbarian})==ThrowLift&&RowKey(Page::Aim,3,v,{heroclass::Barbarian})==LootPick,
               "a Barbarian's Aim page: the aimed monster, the outline, the throws and the loot pick");
-        Check(RowShown(ThrowLift,v,{heroclass::Amazon})&&!RowShown(ThrowLift,v,{heroclass::Sorceress})&&RowShown(ThrowLift,v,{heroclass::Sorceress,false,false,true}),
-              "throw lift: the Amazon's and Barbarian's, or a thrown weapon in hand");
+        Check(RowShown(ThrowLift,v,{heroclass::Amazon})&&RowShown(ThrowLift,v,{heroclass::Assassin})&&!RowShown(ThrowLift,v,{heroclass::Sorceress})&&
+              RowShown(ThrowLift,v,{heroclass::Sorceress,false,false,true}),"throw lift: the Amazon's, Barbarian's and Assassin's (traps), or a thrown weapon in hand");
         Model druid;druid.Open(s);druid.SetContext({heroclass::Druid});druid.Click({Kind::Tab,int(Page::Aim)});
         const auto rows=druid.Rows();Check(rows.count==5&&rows[1]==StaffPoint&&rows[3]==GroundAim&&rows[4]==LootPick,"a Druid: staff aim and ground skills, no laser");
         const auto revision=druid.revision;druid.SetContext({heroclass::Druid});Check(druid.revision==revision,"the same character repaints nothing");
@@ -524,6 +596,22 @@ int main(){
         for(int i=0;i<25;++i)sight.Click(At(sight,Page::Combat,Increase(7)));
         Check(sight.Get()[EnemySight]==300,"300% is the upper bound");
         Check(sight.Click({Kind::Apply}).changed==(ChangeMask{1}<<EnemySight),"enemy sight saves only its own setting");
+    }
+    {Model companion;companion.Open(s);companion.Click({Kind::Tab,int(Page::Combat)});
+        Check(s.values[CompanionAi]==1&&RowKey(Page::Combat,8)==CompanionAi,"companion AI is the ninth Combat row, Enabled by default");
+        Check(ValueBox(8).y+ValueBox(8).h<=800,"companion AI row avoids Combat footer");
+        Check(Normalize(CompanionAi,NAN)==1&&Normalize(CompanionAi,0)==0&&Normalize(CompanionAi,1)==1&&Normalize(CompanionAi,2)==1,"companion AI normalizes to binary choice");
+        Check(std::string(HelpChoice(CompanionAi,1).name)=="Enabled"&&std::string(HelpChoice(CompanionAi,0).name)=="Legacy","companion AI choices are named Enabled and Legacy");
+        companion.Click(At(companion,Page::Combat,ValueBox(8)));
+        Check(companion.Get()[CompanionAi]==0,"clicking value toggles to Legacy (0)");
+        companion.Click(At(companion,Page::Combat,ValueBox(8)));
+        Check(companion.Get()[CompanionAi]==1,"clicking value toggles back to Enabled (1)");
+        companion.Click(At(companion,Page::Combat,Decrease(8)));
+        Check(companion.Get()[CompanionAi]==0,"decrease selects Legacy (0)");
+        companion.Click(At(companion,Page::Combat,Increase(8)));
+        Check(companion.Get()[CompanionAi]==1,"increase selects Enabled (1)");
+        companion.Click(At(companion,Page::Combat,Decrease(8)));
+        Check(companion.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionAi),"companion AI saves only its own setting");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,5)==OfflinePlayers,"difficulty preserves native settings by default");
