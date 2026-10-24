@@ -4459,6 +4459,7 @@ std::atomic<uintptr_t> g_glowUnit{0};     // the unit A acts on, for the highlig
 std::atomic<float> g_glowX{0}, g_glowY{0};
 std::atomic<float> g_glowRgb[3] = {1.0f, 1.0f, 1.0f};
 std::atomic<ULONGLONG> g_glowAt{0};
+framevr::lootaim::PressWatch g_press;     // the last A press, for its log line (WatchPress)
 
 template <class T> bool Rd(uintptr_t a, T& out) { return a >= 0x10000 && framevr::ReadMemory(&out, (const void*)a, sizeof(T)); }
 
@@ -4511,7 +4512,7 @@ void ForgetIfMoved() {
     const auto now = AreaNow(HeroNow());
     if (framevr::lootaim::SameArea(now, g_area)) { if (now.level) g_area.level = now.level; return; }
     if (g_count || g_pick.load()) Log("Frame loot aim: another area - the items and the pick are dropped");
-    g_count = 0; g_pick.store(0); g_scanAt = 0; g_area = now;
+    g_count = 0; g_pick.store(0); g_scanAt = 0; g_area = now; g_press.Cancel();
 }
 
 // Walks the hero's rooms at most every 100 ms; true when it walked in this call.
@@ -4524,7 +4525,8 @@ bool Scan() {
     // The room links are the sewer warp search's, checked against the game's own code first.
     const bool layout = hero && SewerInteractionLayoutReady();
     const auto area = AreaNow(hero);
-    if (!framevr::lootaim::SameArea(area, g_area)) g_pick.store(0);   // another hero unit: a new game
+    if (!framevr::lootaim::SameArea(area, g_area)) { g_pick.store(0); g_press.Cancel(); }   // another hero unit: a new game
+    if (!layout) g_press.Cancel();   // no walk: an empty list is no proof an item was taken
     g_area = area;
     const int count = layout ? framevr::lootaim::Collect(hero, [](uintptr_t at, auto& value) { return Rd(at, value); },
                                                          g_units, g_ids, g_cells, framevr::lootaim::MaxItems, g_heroX, g_heroY) : 0;
@@ -4581,9 +4583,8 @@ void TellThread(const char* hook, int slot) {
     LogF("Frame loot aim: threads - %s runs on thread %lu", hook, GetCurrentThreadId());
 }
 
-// The look's ray for loot: the left eye's forward lowered a little (the eyes look
-// below where the head points; headset test 2026-10-18: without it a player had
-// to look lower than felt natural to pick an item).
+// The look's ray for loot: the left eye's forward, lowered by LookDownDeg (0, tuned
+// in the headset: the item is picked where the head points).
 bool LookAim(framevr::lootaim::Ray& ray) {
     AcquireSRWLockShared(&g_skyLock); const SkyView s = g_skyView[0]; ReleaseSRWLockShared(&g_skyLock);
     if (!s.axes_ok) return false;
@@ -4603,9 +4604,38 @@ bool Pointing() {
     return g_pointing;
 }
 
+// One line per A press with items on the floor: which one the press took, from
+// the unit ids of the pick's own walks (no extra reads of the game, no pointer
+// kept), against the item chosen at the press. walked: a walk ran in this call.
+void WatchPress(bool held, uintptr_t pick, uint32_t pickId, float cells, bool walked) {
+    namespace la = framevr::lootaim;
+    static bool wasHeld = false;
+    static char names[la::MaxItems][48], chosen[48];
+    static float chosenCells = -1.0f;
+    const ULONGLONG now = GetTickCount64();
+    if (held && !wasHeld && g_count > 0) {   // the press: what lies on the floor, what is chosen
+        g_press.Press(g_ids, g_count, pick ? pickId : 0, now);
+        for (int i = 0; i < g_count; ++i) LabelNameOf(g_units[i], names[i], sizeof names[i]);
+        if (pick) LabelNameOf(pick, chosen, sizeof chosen); else snprintf(chosen, sizeof chosen, "nothing");
+        chosenCells = cells;
+    }
+    wasHeld = held;
+    if (walked) {
+        const int i = g_press.Walked(g_ids, g_count);
+        if (i >= 0)
+            LogF("Frame loot aim: A took '%s' id %u (selected '%s' id %u) - %s", names[i], g_press.ids[i], chosen, g_press.chosen,
+                 !g_press.chosen ? "none selected, the game's choice" : g_press.ids[i] == g_press.chosen ? "match" : "MISMATCH");
+        else if (i == -2) Log("Frame loot aim: A press - several items left the list at once (failed walk or the hero moved on), no verdict");
+    }
+    if (g_press.Expired(now))
+        LogF("Frame loot aim: A took nothing within 3 s (selected '%s' id %u, %.1f cells from the hero%s)", chosen, g_press.chosen,
+             chosenCells, la::InReach(chosenCells, g_set.lootPickReach.load()) ? "" : ", past the pick-up reach");
+}
+
 // The item Interact takes, or 0 (off, or nothing picked).
 uintptr_t HandItem() {
     if (!On()) {
+        g_press.Cancel();
         g_pick.store(0);
         if (!LootPickOn()) g_lootWantsHero.store(false);   // Off: the facing hook stops looking for the hero for us
         return 0;
@@ -4651,6 +4681,7 @@ uintptr_t HandItem() {
                  la::InReach(cells, g_set.lootPickReach.load()) ? "" : ", past the pick-up reach");
         }
     }
+    WatchPress(held, pick, id, cells, walked);
     return Handed(pick, walked);   // the prompt and A get only a live item
 }
 
@@ -6377,8 +6408,9 @@ bool LabelHighlightWanted() {
     return false;
 #endif
 }
-// The highlighted item, whose name is also drawn 30% larger than the others.
-constexpr float kHighlightedLabelScale = 1.3f;
+// The highlighted item, whose name is also drawn 80% larger than the others
+// (tuned in the headset; at most twice the game's size).
+constexpr float kHighlightedLabelScale = 1.8f;
 uintptr_t HighlightedLabelUnit() {
 #ifdef D2RVR_NATIVE_OPENXR
     return LabelHighlightWanted() ? lootaimvr::Highlighted() : 0;
@@ -9795,9 +9827,9 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         float mob[2][4] = {}, item[4] = {};
 #ifdef D2RVR_NATIVE_OPENXR
         if (loot) {
-            // A tight circle round the item's cell (an armor or a polearm whole, not
-            // the grass beside it) and from just above the floor, clear of its bumps,
-            // to 1.5 m up; rarity color, a gentle pulse (red and steady when too far).
+            // A circle of 2 world units round the item's cell (an armor or a polearm
+            // whole, tuned in the headset) and from just above the floor, clear of its
+            // bumps, to 1.5 m up; rarity color, a gentle pulse (red and steady when too far).
             const float upm = std::max(1.0f, ViewHeight()) / UserEyeHeightM();
             const float floor = sv[0].hero[1], shear = framevr::coordinates::GroundShear;
             float rgba[4];
@@ -9805,7 +9837,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
             item[0] = lootaimvr::g_glowX.load() * 2.0f + floor * shear - sv[0].hero[0];
             item[2] = lootaimvr::g_glowY.load() * 2.0f + floor * shear - sv[0].hero[2];
             item[3] = rgba[3];
-            const float itemShape[3] = {1.6f, 0.03f * upm, 1.5f * upm};
+            const float itemShape[3] = {2.0f, 0.03f * upm, 1.5f * upm};
             SetFloats(rt, "ItemOutlineShape", itemShape, 3);
             SetFloats(rt, "ItemOutlineColor", rgba, 3);
         }

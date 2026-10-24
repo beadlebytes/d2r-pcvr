@@ -153,5 +153,27 @@ int main() {
     const Area here{0x100000,2,7};
     Check(SameArea(here,here)&&SameArea(here,{0x100000,0,7})&&SameArea({0x100000,0,7},here),"an unknown area id is not compared");
     Check(!SameArea(here,{0x100000,3,7})&&!SameArea(here,{0x100000,2,8})&&!SameArea(here,{0x200000,2,7}),"another id, look or hero: another area");
+
+    // An A press followed for its log line, by unit ids only.
+    {
+        const uint32_t floor[3]={11,12,13},afterTake[2]={11,13},afterBoth[1]={11};
+        PressWatch w;
+        Check(!w.Active()&&w.Walked(floor,3)==-1&&!w.Expired(5000),"no press: nothing to tell");
+        w.Press(floor,3,12,1000);
+        Check(w.Walked(floor,3)==-1,"the same walk: nothing taken yet");
+        Check(w.Walked(afterTake,2)==1&&w.ids[1]==w.chosen,"the chosen item gone from a later walk: taken, a match");
+        Check(w.Walked(afterTake,2)==-1,"each taken item is told once");
+        Check(!w.Expired(1000+PressWatchMs-1)&&!w.Expired(1000+PressWatchMs)&&!w.Active(),"after a take the watch ends without a 'nothing' line");
+        w.Press(floor,3,12,2000);
+        Check(w.Walked(afterTake,2)==1&&w.Walked(afterBoth,1)==2&&w.ids[2]!=w.chosen,"held on: a second item taken is told too, a mismatch");
+        w.Press(floor,3,12,3000);
+        Check(w.Walked(afterBoth,1)==-2&&!w.Active()&&!w.Expired(9000),"two gone at once: no verdict, the watch ends");
+        w.Press(floor,3,12,4000);
+        Check(!w.Expired(4000+PressWatchMs-1)&&w.Expired(4000+PressWatchMs)&&!w.Expired(4000+PressWatchMs+1),"nothing taken with an item chosen: told once at 3 s");
+        w.Press(floor,3,0,5000);
+        Check(!w.Expired(5000+PressWatchMs),"nothing chosen and nothing taken: no line");
+        w.Press(floor,3,12,6000);w.Cancel();
+        Check(!w.Active()&&w.Walked(afterTake,2)==-1&&!w.Expired(9999),"cancelled (Off, another area, no walk): silent");
+    }
     std::puts("loot aim tests passed");
 }

@@ -17,7 +17,7 @@ constexpr float PickRadiusCells=1.f;     // an item this far from the aim's floo
 constexpr float KeepFactor=1.3f;         // the current pick stays while inside the radius times this
 constexpr float SwitchShare=.25f;        // another item takes over when nearer by this share of the radius
 constexpr float ReachCells=25.f;         // never an item farther than this from the hero
-constexpr float LookDownDeg=8.f;         // the eyes look a little below the head's forward
+constexpr float LookDownDeg=0.f;         // the look is the head's forward (tuned in the headset from 8 to 0)
 constexpr float DefaultPickupCells=5.5f; // [interactions] loot_pick_reach_cells: A picks up without walking
 // The aiming hand points while held out from the head (horizontal reach, m);
 // it lets go 6 cm nearer so the answer does not flicker. Pointing steeply down
@@ -209,4 +209,36 @@ Live Find(uintptr_t hero,Read read,uintptr_t item,uint32_t id) {
 }
 template<class Read>
 bool Contains(uintptr_t hero,Read read,uintptr_t item,uint32_t id) {return Find(hero,read,item,id).found;}
+
+// One A press followed for PressWatchMs, for the headset log: the unit ids of
+// the items on the floor at the press (no pointer is kept) and the chosen one's.
+// An item the pick's own later walks no longer find was taken. A walk that loses
+// more than one of them at once took none (a failed walk, the hero moved on): the
+// watch ends there without a verdict. A new press starts a new watch.
+constexpr uint64_t PressWatchMs=3000;
+struct PressWatch {
+    uint32_t ids[MaxItems]{};bool gone[MaxItems]{};
+    int count=0;uint32_t chosen=0;uint64_t at=0;bool took=false;
+    bool Active() const {return at!=0;}
+    void Cancel() {at=0;}
+    void Press(const uint32_t* now,int n,uint32_t chosenId,uint64_t ms) {
+        count=std::clamp(n,0,MaxItems);std::copy_n(now,count,ids);std::fill_n(gone,count,false);
+        chosen=chosenId;at=ms?ms:1;took=false;
+    }
+    // After a walk (its ids): the index of the one press item it no longer finds,
+    // -1 none, -2 more than one (the watch ends).
+    int Walked(const uint32_t* now,int n) {
+        if(!at)return -1;
+        int lost=-1,lostCount=0;
+        for(int i=0;i<count;++i)if(!gone[i]&&std::find(now,now+n,ids[i])==now+n){lost=i;++lostCount;}
+        if(lostCount>1){at=0;return -2;}
+        if(lost>=0){gone[lost]=true;took=true;}
+        return lost;
+    }
+    // True once when the watch runs out with nothing taken while an item was chosen.
+    bool Expired(uint64_t ms) {
+        if(!at||ms-at<PressWatchMs)return false;
+        at=0;return !took&&chosen;
+    }
+};
 }
