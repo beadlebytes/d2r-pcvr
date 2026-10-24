@@ -398,6 +398,22 @@ int main(){
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save companion count preference");
         Check(vrsettings::Read().values[CompanionCounts]==enabled&&Int(path,L"interactions",L"companion_counts")==enabled&&Int(path,L"custom",L"keep")==12345,"companion preference survives reload without touching other settings");
     }
+    // Loot pick, the Loot tab's row: Off when missing, each choice saved as [interactions] loot_pick.
+    Check(vrsettings::Read().values[LootPick]==0&&Int(path,L"interactions",L"loot_pick")==-999,"a profile without loot_pick reads Off");
+    for(int choice:{1,2,0}) {
+        const auto current=vrsettings::Read();model.Open(current);model.Click({Kind::Tab,int(Page::Loot)});
+        const auto rows=model.Rows();const Rect plus=Increase(0);
+        model.Click(HitTest(Page::Loot,(plus.x+plus.w*.5f)/Width,(plus.y+plus.h*.5f)/Height,false,&rows));
+        request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save the loot pick from the Loot tab");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[LootPick]==choice&&Int(path,L"interactions",L"loot_pick")==choice&&
+              Changed(saved.values,current.values)==(ChangeMask{1}<<LootPick)&&Int(path,L"custom",L"keep")==12345,"each loot pick choice survives reload and touches nothing else");
+    }
+    Check(WritePrivateProfileStringW(L"interactions",L"loot_pick",L"7",name),"write an unknown loot pick");
+    vrsettings::Poll(name);Check(vrsettings::Read().values[LootPick]==0,"an unknown loot_pick reads Off");
+    Check(WritePrivateProfileStringW(L"interactions",L"loot_pick",nullptr,name),"remove the loot pick");
+    vrsettings::Poll(name);
     model.Open(vrsettings::Read());model.Click({Kind::Change,Motion,-1});request=model.Click({Kind::Apply});
     Check(DeleteFileW(name)&&vrsettings::Submit(request)&&!vrsettings::Poll(name),"missing file fails safely");
     Check(!vrsettings::Read().ready&&vrsettings::Read().result==Result::Failed,"failure status published");

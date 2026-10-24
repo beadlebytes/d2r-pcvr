@@ -188,7 +188,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
             if(defer)button(DeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
         }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your skills find their target and what you see of it. Rows for other classes stay hidden.":
-             m.page==Page::Shield?"Seat a held shield on your forearm.":m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+             m.page==Page::Shield?"Seat a held shield on your forearm.":m.page==Page::Loot?"Choose which item on the floor Interact picks up.":m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         const RowList rows=m.Rows();
         for(int row=0;row<rows.count;++row){
             const Key key=rows[row];const int y=RowY+row*RowStep;

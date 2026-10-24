@@ -449,6 +449,32 @@ int main(){
         Check(save.changed==(ChangeMask{1}<<BowLaser)&&save.values[BowLaser]==345,"Apply saves only the laser");
         Check(Normalize(BowLaser,-1)==LaserOff&&Normalize(BowLaser,-200)==LaserOff&&Normalize(BowLaser,400)==345&&Normalize(BowLaser,NAN)==LaserOff,
               "any negative saved value is Off; others stay on the wheel");}
+    {   // Loot tab: which dropped item Interact (A) takes, Off (the game's nearest item, as before), On, On with glow
+        Check(std::strcmp(TabNames[int(Page::Loot)],"Loot")==0&&Page(int(Page::Shield)+1)==Page::Loot&&Page(int(Page::Loot)+1)==Page::Haptics&&
+              Page(int(Page::Haptics)+1)==Page::Performance&&Page(int(Page::Performance)+1)==Page::ReleaseNotes&&int(Page::ReleaseNotes)==TabCount-1,
+              "the Loot tab sits after Shield; Haptics, Perf and Notes keep their order, Notes last");
+        for(int i=0;i<TabCount;++i)Check(TabBox(i).x>=40&&TabBox(i).x+TabBox(i).w<=1240&&TabBox(i).y==TabBox(0).y&&(i==0||TabBox(i).x>=TabBox(i-1).x+TabBox(i-1).w+6),
+                                          "the eleven tabs fit the panel without overlapping");
+        for(int p=0;p<TabCount;++p)Check(CatalogCount(Page(p))<=MaxRows,"every page's rows fit the panel: none is ever cut off");
+        for(int p=0;p<TabCount;++p)for(int i=0;i<CatalogCount(Page(p));++i)
+            Check((CatalogKey(Page(p),i)==LootPick)==(Page(p)==Page::Loot),"Loot pick is on the Loot page and no other");
+        const auto& d=Definitions[LootPick];
+        Check(CatalogCount(Page::Loot)==1&&RowCount(Page::Loot)==1&&RowKey(Page::Loot,0)==LootPick&&s.values[LootPick]==0,"the Loot page holds the loot pick, Off by default");
+        Check(std::wstring(d.section)==L"interactions"&&std::wstring(d.key)==L"loot_pick"&&d.min==0&&d.max==2&&d.step==1,"one [interactions] loot_pick value, 0 to 2");
+        for(int c=-1;c<=heroclass::Assassin;++c)Check(RowCount(Page::Loot,s.values,{c})==1,"every class, and the menus, show the loot pick");
+        Model loot;loot.Open(s);loot.Click(At(loot,Page::Controls,TabBox(int(Page::Loot))));Check(loot.page==Page::Loot&&loot.Rows().count==1,"the Loot tab opens its page");
+        Check(HelpAt(Page::Loot,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==LootPick&&HelpAt(Page::Loot,100.f/Width,(RowY+10.f)/Height)==LootPick,
+              "the loot pick row explains itself");
+        Check(HelpChoices(LootPick)==3&&std::strcmp(HelpChoice(LootPick,0).name,"Off")==0&&std::strcmp(HelpChoice(LootPick,2).name,"On with glow")==0,
+              "the loot pick row names its three choices");
+        loot.Click(At(loot,Page::Loot,Increase(0)));Check(loot.Get()[LootPick]==1,"plus turns the pick On");
+        loot.Click(At(loot,Page::Loot,Increase(0)));Check(loot.Get()[LootPick]==2,"then On with glow");
+        loot.Click(At(loot,Page::Loot,Increase(0)));Check(loot.Get()[LootPick]==0,"then round to Off, like Ground skills");
+        loot.Click(At(loot,Page::Loot,Decrease(0)));Check(loot.Get()[LootPick]==2,"and minus from Off is On with glow");
+        const auto save=loot.Click({Kind::Apply});
+        Check(save.changed==(ChangeMask{1}<<LootPick)&&save.values[LootPick]==2,"Apply saves only the loot pick");
+        Check(Normalize(LootPick,1.5f)==0&&Normalize(LootPick,3)==0&&Normalize(LootPick,-1)==0&&Normalize(LootPick,NAN)==0&&Normalize(LootPick,2)==2,
+              "a saved value that is not 0, 1 or 2 is Off");}
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         // The defaults (outline Off, Ground skills Game) leave out the rows that cannot apply.
         Check(RowCount(Page::Aim)==6&&RowKey(Page::Aim,0)==SpellLock&&RowKey(Page::Aim,1)==StaffPoint&&RowKey(Page::Aim,2)==TargetHighlight&&
@@ -840,7 +866,7 @@ int main(){
     Check(m.Get()[CompanionCounts]==0&&m.Get()[NavigationLocation]==0,"companion toggle is independent of map placement");
     Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionCounts),"companion toggle uses its own high change-mask bit");
     {   // Left-hand strikes: set from the skill wheel (Druid), on no settings page; no Class tab
-        Check(TabCount==10&&Page(int(Page::Shield)+1)==Page::Haptics,"ten tabs: Haptics follows Shield");
+        Check(TabCount==11&&Page(int(Page::Shield)+1)==Page::Loot&&Page(int(Page::Loot)+1)==Page::Haptics,"eleven tabs: Loot between Shield and Haptics");
         for(int i=0;i<TabCount;++i)if(std::strcmp(TabNames[i],"Class")==0)Check(false,"no Class tab");
         Check(s.values[LeftHandStrikes]==0&&std::wstring(Definitions[LeftHandStrikes].key)==L"left_hand_strikes"&&HelpText(LeftHandStrikes)[0]!=0&&
               HelpChoices(LeftHandStrikes)==2,"left-hand strikes: own trigger skill by default, two explained choices");

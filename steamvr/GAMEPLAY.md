@@ -219,7 +219,7 @@ there is no saved toggle or automatic resume.
 The game's native item/filter rules apply. Inventory tooltips and monster labels
 keep their styling.
 
-**Choosing which item Interact picks up (native VR).** VR Settings > Aim >
+**Choosing which item Interact picks up (native VR).** VR Settings > Loot >
 **Loot pick**: Off (default), On, or On with glow. With several items on the
 floor, Interact (right A by default) takes the item you choose rather than the
 game's nearest one. Hold the aiming arm out (about 20 cm from your head, less when

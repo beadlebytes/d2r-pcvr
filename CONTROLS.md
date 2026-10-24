@@ -114,7 +114,7 @@ does not wait for an item to come into range. Release and press again for each
 new target. A release during an inventory/NPC menu rearms interaction; holding
 the button through a menu or game-session change cannot reuse the old target.
 
-**VR Settings > Aim > Loot pick** (Off by default): with several items on the
+**VR Settings > Loot > Loot pick** (Off by default): with several items on the
 floor, Interact takes the one you choose, not the nearest. Point at it with the
 aiming hand held out, or with the arm resting just look at it. A chosen item
 farther than the pick-up reach (5.5 cells) is left alone: A takes nothing, not
