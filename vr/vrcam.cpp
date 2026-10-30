@@ -327,7 +327,7 @@ struct Settings {
     std::atomic<bool>  torchFlicker{true};       // [torch] flicker: organic turbulent flame flicker
     std::atomic<float> torchWarmth{0.65f};       // [torch] warmth: color warmth toward fire orange
     std::atomic<int>   armsMode{0};        // 0 game animation, 1 test pose (arms ahead), 2 controllers
-    std::atomic<bool>  hideHead{false};     // shrink the hero's head away (first person)
+    std::atomic<bool>  hideHead{false};     // hide the hero's head from the eyes (first person): shrunk, or cut (headShadow)
     std::atomic<bool>  headShadow{true};    // [arms] head_shadow: the hidden head stays whole for its shadow, the eye views cut it (head_shadow.h)
     std::atomic<float> armScale{1.0f};      // reach on top of the hero/user height ratio
     std::atomic<bool>  bodywalkPad{true};   // [input] bodywalk_pad: the game's pad is BodyWalk's own report (pad_mirror_shared.h) - no virtual pad needed
@@ -1359,14 +1359,16 @@ void LoadSettings() {
     LoadCeilingTextures();
     g_set.armsMode.store(std::clamp((int)IniF(L"arms", L"mode", 0.0f), 0, 2));
     g_set.hideHead.store(IniB(L"arms", L"hide_head", false));
-    {   // the head kept for its shadow: told at start and on each change
+    {   // the head kept for its shadow (steamvr/head_shadow.h): told at start and on each change
         static int told = -1;
-        const bool keep = IniB(L"arms", L"head_shadow", true);
+        const bool keep = IniB(L"arms", L"head_shadow", true), hide = g_set.hideHead.load(), trace = IniB(L"debug", L"head_shadow", false);
         g_set.headShadow.store(keep);
-        if (int(keep) != told) {
-            told = keep;
-            LogF("Frame head shadow: [arms] head_shadow=%d (%s)", int(keep),
-                 keep ? "first person keeps the head whole for its shadow; the eye views cut it" : "the hidden head shrinks to the neck, its shadow headless");
+        headshadow::SetTrace(trace);
+        if (const int now = int(keep) | int(hide) << 1 | int(trace) << 2; now != told) {
+            told = now;
+            LogF("Frame head shadow: [arms] head_shadow=%d, hide_head=%d, [debug] head_shadow=%d (%s)", int(keep), int(hide), int(trace),
+                 !hide ? "the head is not hidden: nothing changes" : keep ? "full-body first person keeps the head whole for its shadow; the eye views cut it"
+                                                                         : "the hidden head shrinks to the neck, its shadow headless");
         }
     }
     g_set.armScale.store(std::clamp(IniF(L"arms", L"scale", 1.0f), 0.3f, 3.0f));
@@ -2797,6 +2799,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
 // clip that cuts the hero's own head away, and in AFR each eye's off-axis
 // shift so what lies at `convergence` sits on the screen.
 bool VrProjInner(const d2rcam::WorldView& in, float M[16]);
+int ShapeFormNow();
 bool VrProj(const d2rcam::WorldView& in, float M[16]) {
     FRAME_PROFILE(Projection);
 #ifdef D2RVR_NATIVE_OPENXR
@@ -2818,10 +2821,11 @@ bool VrProjInner(const d2rcam::WorldView& in, float M[16]) {
     // The table: nothing of the hero to cut away, and the head may come down close to the game - 5 cm.
     float nearZ = TableView() ? 0.05f * g_set.tableScale.load() : TopPersp() ? 0.5f : std::max(g_set.nearClip.load(), 0.05f);
 #if D2RVR_FIRST_PERSON
-    // First person with the head kept whole for its shadow ([arms] head_shadow, PushArms' hideHead): nothing nearer
-    // than the cut at this head pitch is drawn, so the inside of the head never shows (steamvr/head_shadow.h).
+    // First person in full body with the head kept whole for its shadow ([arms] hide_head and head_shadow, as PushArms
+    // decides): nothing nearer than the cut at this head pitch is drawn, so the head is not seen from inside
+    // (steamvr/head_shadow.h). Not in a shapeshift form: its head shrinks as before.
     if (!ThirdPerson() && !Overhead()) {
-        const bool keep = g_set.headShadow.load() && (g_set.hideHead.load() || !FullBody());
+        const bool keep = g_set.headShadow.load() && g_set.hideHead.load() && FullBody() && !ShapeFormNow();
         if (keep || headshadow::Holding()) {
             const D2RVR_Shared* sh = g_shared;
             const float pitch = sh && sh->version == D2RVR_SHARED_VERSION && sh->headValid && sh->pitchValid ? sh->headPitchDeg : NAN;
@@ -7460,7 +7464,7 @@ void PushArms() {
     in.bodyTurn = own ? (FullBody() ? g_set.bodyTurn.load() : 2) : on && ThirdPerson() && !Overhead() && g_set.thirdTurn.load() ? 2 : 0;
 #if D2RVR_FIRST_PERSON
     in.hideHead = own && (g_set.hideHead.load() || !FullBody());
-    in.headShadow = g_set.headShadow.load();
+    in.headShadow = g_set.headShadow.load() && FullBody();   // VR's full-body view only: a flat first person shrinks as before
     const int likeStaff = HeldLikeStaff();
     // a staff in the hands: aimed from hand to hand ([bow] staff_two_hands) or fast in the right one with
     // the left free (staff_free_left) - the latter no longer waits for the aim's box (off by default since
