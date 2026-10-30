@@ -9,7 +9,7 @@ namespace framevr::stickgestures {
 // nothing, so a slightly diagonal push never snap-turns, and a sideways push
 // that slides up or down is still a turn.
 inline constexpr float Push=.65f,Vertical=1.6f,Centre=.3f;
-struct Result {bool toggleRun=false,showLoot=false,owned=false;};
+struct Result {bool toggleRun=false,showLoot=false,toggleLoot=false,owned=false;};   // toggleLoot: down, once per push
 class Gestures {
     enum class Direction {None,Up,Down};
     Direction direction=Direction::None;
@@ -27,7 +27,7 @@ public:
             if(length<Centre)armed=true;
             else if(armed&&std::fabs(y)>=Push&&std::fabs(y)>=Vertical*std::fabs(x)) {
                 direction=y>0?Direction::Up:Direction::Down;armed=false;
-                r.toggleRun=direction==Direction::Up;
+                r.toggleRun=direction==Direction::Up;r.toggleLoot=direction==Direction::Down;
             } else if(length>=Push)armed=false;   // a turn
         } else if(length<Centre) {
             direction=Direction::None;armed=true;

@@ -20,6 +20,11 @@ int main() {
     for(int i=0;i<20;++i)Check(g.Step(true,.4f,-.7f).showLoot,"for as long as it is held, wandering a little");
     Check(!g.Step(true,0,-.1f).showLoot,"letting go hides them");
     g.Step(true,0,0);
+    {int pushes=0;for(int i=0;i<20;++i)pushes+=g.Step(true,i%2?.1f:-.1f,-.9f).toggleLoot;
+     Check(pushes==1,"one push down reports toggleLoot once, however long it is held");}
+    g.Step(true,0,0);
+    Check(!g.Step(true,0,1).toggleLoot,"up never toggles the loot labels");
+    g.Step(true,0,0);
     Check(!g.Step(true,.9f,.1f).owned,"a sideways push is a turn");
     Check(!g.Step(true,.6f,.75f).owned&&!g.Step(true,.2f,.9f).toggleRun,"a turn sliding up is still a turn until the centre");
     g.Step(true,0,0);

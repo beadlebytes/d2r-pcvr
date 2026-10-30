@@ -2838,11 +2838,18 @@ void Input() {
     const auto rightStick=rightStickGestures.Step(mapzoom::WorldGestures(lootWorld&&handControls.Wheel()<0,wristMapLooked),
         controls.rx/32767.f,controls.ry/32767.f);
     if(rightStick.owned)controls.rx=controls.ry=0;
-    const bool lootHeld=rightStick.showLoot;
+    // Loot names latch (hud.labels_latch): a down push shows the names until the next one,
+    // instead of only while held. Leaving the world, a wheel or turning it Off clears it.
+    static bool lootLatched=false;
+    const auto latchSettings=vrsettings::Read();
+    const bool lootLatch=latchSettings.ready&&latchSettings.values[settings::LootLabelLatch]>.5f;
+    if(!lootLatch||!lootWorld)lootLatched=false;
+    else if(rightStick.toggleLoot)lootLatched=!lootLatched;
+    const bool lootHeld=lootLatch?lootLatched:rightStick.showLoot;
     const bool wasLootHeld=lootlabels::display.ShowAll(lootNow);
     lootlabels::display.Refresh(lootSession,lootNow,lootWorld,lootHeld);
     if(lootHeld!=wasLootHeld) {
-        Say(lootHeld?"Frame loot labels: Show Items (Alt) held (right stick down)":"Frame loot labels: normal drop/hover behavior");
+        Say(lootHeld?(lootLatch?"Frame loot labels: Show Items (Alt) latched on (right stick down)":"Frame loot labels: Show Items (Alt) held (right stick down)"):"Frame loot labels: normal drop/hover behavior");
         if(lootHeld)MotionPulse(0,haptics::Category::Interaction,.45f,45000000);
     }
     motionInput.trigger=controls.rt/255.f;
