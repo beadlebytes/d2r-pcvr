@@ -372,7 +372,9 @@ std::vector<Item> g_items = {
     // The arms follow the controllers in VR view F4 and the game's animation in every other ([arms] mode is gone from here).
     Only(kVr, Group(L"Arms (F4: the body follows yours)")),
     Toggle(L"arms", L"hide_head", L"Hide the hero's head and neck", 0,
-           L"Shrinks the hero's head and neck away, for a camera right at the eyes: looking down shows the chest. "
+           L"Hides the hero's head and neck from your eyes, for a camera right at the eyes: looking down shows the chest. "
+           L"His shadow keeps the head: nothing within about 11 cm of your eyes is drawn ([arms] head_shadow=0: the head "
+           L"shrinks away, the shadow headless). "
            L"Keep \"Camera ahead / behind\" at 0 then - moved ahead, the camera leaves the hands out of reach."),
     Needs(L"arms", L"mode", 2, Slider(L"arms", L"scale", L"Arm length (scale)", 0.3f, 3, 0.05f, 1, L"Arm reach on top of the hero-to-your-height ratio.")),
     Needs(L"arms", L"mode", 2, Slider(L"arms", L"up", L"Hands up (+) / down (-), cm", -40, 40, 1, 0)),

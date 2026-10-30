@@ -15,6 +15,7 @@ struct Input {
     int mode = 0;               // arms: 0 game animation, 1 test pose (arms ahead), 2 controllers
     int bodyTurn = 0;           // 0 the game's facing, 1 above the pelvis, 2 whole body faces where the camera looks
     bool hideHead = false;      // shrink the hero's head away (first person)
+    bool headShadow = false;    // [arms] head_shadow: keep the head whole for its shadow instead, the eye views cut it (steamvr/head_shadow.h)
     bool lockUpper = false;     // nothing above the pelvis follows the game's animation: bind pose, then ours
     bool legsUnder = false;     // with lockUpper: pelvis and legs kept under that body - no lunge ahead, no hip turn
     bool wrist = false;         // mode 2: the hands turn with the controllers, not only follow the forearm

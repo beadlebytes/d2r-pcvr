@@ -37,6 +37,7 @@
 #include "../steamvr/aim_reach.h"
 #include "../steamvr/torch_light.h"
 #include "../steamvr/leather_menu.h"
+#include "../steamvr/head_shadow.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -327,6 +328,7 @@ struct Settings {
     std::atomic<float> torchWarmth{0.65f};       // [torch] warmth: color warmth toward fire orange
     std::atomic<int>   armsMode{0};        // 0 game animation, 1 test pose (arms ahead), 2 controllers
     std::atomic<bool>  hideHead{false};     // shrink the hero's head away (first person)
+    std::atomic<bool>  headShadow{true};    // [arms] head_shadow: the hidden head stays whole for its shadow, the eye views cut it (head_shadow.h)
     std::atomic<float> armScale{1.0f};      // reach on top of the hero/user height ratio
     std::atomic<bool>  bodywalkPad{true};   // [input] bodywalk_pad: the game's pad is BodyWalk's own report (pad_mirror_shared.h) - no virtual pad needed
     std::atomic<int>   inventoryPad{0};     // [input] inventory_button: the pad button "D2R: Inventory" sends - 0 Menu (Start), 1 View (Back)
@@ -1357,6 +1359,16 @@ void LoadSettings() {
     LoadCeilingTextures();
     g_set.armsMode.store(std::clamp((int)IniF(L"arms", L"mode", 0.0f), 0, 2));
     g_set.hideHead.store(IniB(L"arms", L"hide_head", false));
+    {   // the head kept for its shadow: told at start and on each change
+        static int told = -1;
+        const bool keep = IniB(L"arms", L"head_shadow", true);
+        g_set.headShadow.store(keep);
+        if (int(keep) != told) {
+            told = keep;
+            LogF("Frame head shadow: [arms] head_shadow=%d (%s)", int(keep),
+                 keep ? "first person keeps the head whole for its shadow; the eye views cut it" : "the hidden head shrinks to the neck, its shadow headless");
+        }
+    }
     g_set.armScale.store(std::clamp(IniF(L"arms", L"scale", 1.0f), 0.3f, 3.0f));
     g_set.poseOrderLog.store(IniB(L"debug", L"pose_order", false));
     g_set.frameLog.store(IniB(L"debug", L"frame_log", false));
@@ -2804,7 +2816,19 @@ bool VrProjInner(const d2rcam::WorldView& in, float M[16]) {
     const float aspect = ratio > 0.1f && ratio < 10.0f ? ratio : 16.0f / 9.0f;
     g_lastAspect.store(aspect);
     // The table: nothing of the hero to cut away, and the head may come down close to the game - 5 cm.
-    const float nearZ = TableView() ? 0.05f * g_set.tableScale.load() : TopPersp() ? 0.5f : std::max(g_set.nearClip.load(), 0.05f);
+    float nearZ = TableView() ? 0.05f * g_set.tableScale.load() : TopPersp() ? 0.5f : std::max(g_set.nearClip.load(), 0.05f);
+#if D2RVR_FIRST_PERSON
+    // First person with the head kept whole for its shadow ([arms] head_shadow, PushArms' hideHead): nothing nearer
+    // than the cut at this head pitch is drawn, so the inside of the head never shows (steamvr/head_shadow.h).
+    if (!ThirdPerson() && !Overhead()) {
+        const bool keep = g_set.headShadow.load() && (g_set.hideHead.load() || !FullBody());
+        if (keep || headshadow::Holding()) {
+            const D2RVR_Shared* sh = g_shared;
+            const float pitch = sh && sh->version == D2RVR_SHARED_VERSION && sh->headValid && sh->pitchValid ? sh->headPitchDeg : NAN;
+            nearZ = headshadow::EyeNear(nearZ, keep, std::max(1.0f, ScaleHeight()) / UserEyeHeightM(), pitch);
+        }
+    }
+#endif
     g_lastNear.store(nearZ);
     d2rcam::m4::PerspectiveRevZ(CameraFov() * 3.14159265f / 180.0f, aspect, nearZ, M);
     // The frustum IS the FlatVR screen: each side by its own size at its distance.
@@ -7436,6 +7460,7 @@ void PushArms() {
     in.bodyTurn = own ? (FullBody() ? g_set.bodyTurn.load() : 2) : on && ThirdPerson() && !Overhead() && g_set.thirdTurn.load() ? 2 : 0;
 #if D2RVR_FIRST_PERSON
     in.hideHead = own && (g_set.hideHead.load() || !FullBody());
+    in.headShadow = g_set.headShadow.load();
     const int likeStaff = HeldLikeStaff();
     // a staff in the hands: aimed from hand to hand ([bow] staff_two_hands) or fast in the right one with
     // the left free (staff_free_left) - the latter no longer waits for the aim's box (off by default since
