@@ -28,55 +28,146 @@ struct Memory {
 };
 
 int main() {
-    // Eye 6 units up looking along +z; items on the floor (y 0), with their distance from the hero in cells.
-    const Ray look{{0,6,0},{0,-.5f,1},true};   // meets the floor at z 12
-    const Item items[]={{1,{0,0,12},6},{2,{3,0,12},6.5f},{3,{0,0,60},30},{4,{-.4f,0,3},1.5f}};
-    const Ray none{};
-    Check(Select(items,4,none,look,0,false).unit==1,"the look picks the item where it meets the floor");
-    Check(Select(items,4,none,{{0,6,0},{.25f,-.5f,1},true},0,false).unit==2,"looking over at the neighbour picks it");
-    Check(Select(items,4,none,{{0,6,0},{0,.2f,1},true},0,false).unit==0,"looking up: no pick");
-    Check(Select(items,4,none,{{0,6,0},{0,-.1f,1},true},0,false).unit==0,"an item past reach is never picked, even dead on the aim");
-    Check(Select(items,4,none,{{0,6,0},{-.25f,-.5f,1},true},0,false).unit==0,"3 units beside every item: outside the one-cell radius");
-    Check(std::fabs(FloorDistance(look,{0,0,12}))<1e-3f&&std::fabs(FloorDistance(look,{3,0,12})-3)<1e-3f,"floor distance from the aim's floor point");
-    Check(FloorDistance({{0,6,0},{0,.1f,1},true},{0,0,12})>1e8f,"a ray looking up never meets the floor");
+    // A hand 6 units up pointing along +z; items on the floor (y 0), with their distance from the hero in cells.
+    const Ray hand{{0,6,0},{0,-.5f,1},true};   // meets the floor at z 12
+    const Item items[]={{1,{0,0,12},6},{2,{3,0,12},6.5f},{3,{0,0,100},50},{4,{-.4f,0,3},1.5f}};
+    auto at=[](float x){return Ray{{0,6,0},{x/12,-.5f,1},true};};   // the hand pointed at x on the floor at z 12
+    Check(Select(items,4,hand,0).unit==1,"the hand picks the item where its ray meets the floor");
+    Check(Select(items,4,at(3),0).unit==2,"pointing over at the neighbour picks it");
+    Check(Select(items,4,{{0,6,0},{0,.2f,1},true},0).unit==0,"pointing up: no pick");
+    Check(Select(items,4,{{0,6,0},{0,-.06f,1},true},0).unit==0,"an item past 40 cells is never picked, even dead on the aim");
+    Check(Select(items,4,at(1.4f),0).unit==1&&Select(items,4,at(-3.5f),0).unit==0,"a circle of 1.5 cells (3 units) round the pointed spot");
+    Check(Select(items,4,Ray{},0).unit==0&&Select(items,4,Ray{},1).unit==0,"no ray (the arm not out): no pick, the current one let go");
+    Check(std::fabs(FloorDistance(hand,{0,0,12}))<1e-3f&&std::fabs(FloorDistance(hand,{3,0,12})-3)<1e-3f,"floor distance from the pointed spot");
+    Check(FloorDistance({{0,6,0},{0,.1f,1},true},{0,0,12})>1e8f,"a ray pointing up never meets the floor");
 
-    // Between two items the current one stays until another is clearly nearer.
-    const Ray between{{0,6,0},{1.6f/12,-.5f,1},true};   // 1.6 units from item 1, 1.4 from item 2
-    Check(Select(items,4,none,between,1,false).unit==1,"between two items the current pick stays");
-    Check(Select(items,4,none,between,2,false).unit==2,"either way");
-    Check(Select(items,4,none,{{0,6,0},{2.f/12,-.5f,1},true},1,false).unit==2,"a clearly nearer item takes over");
-    Check(Select(items,4,none,{{0,6,0},{2.4f/12,-.5f,1},true},1,false).unit==2,"and the old one, now 2.4 units off, is let go");
+    // Between two items the current one stays until another is nearer by a quarter cell (0.5 units).
+    Check(Select(items,4,at(1.6f),1).unit==1&&Select(items,4,at(1.6f),2).unit==2,"between two items the current pick stays, either way");
+    Check(Select(items,4,at(1.74f),1).unit==1,"1.26 units against 1.74: not yet a quarter cell nearer");
+    Check(Select(items,4,at(1.76f),1).unit==2,"1.24 against 1.76: the neighbour takes over");
+    Check(Select(items,4,at(-3.5f),1).unit==1,"the current pick stays out to 130% of the circle");
+    Check(Select(items,4,at(4.5f),1).unit==2,"and past it, 4.5 units off, is let go");
 
-    // The pointing hand wins while it is on an item, even a farther one; off any item the look picks.
-    const Ray hand{{.3f,4,.3f},{-.3f,-4,11.7f},true};   // at item 1
-    const Ray lookAtFeet{{0,6,0},{-.4f,-6,3},true};     // at item 4
-    const auto byHand=Select(items,4,hand,lookAtFeet,0,false);
-    Check(byHand.unit==1&&byHand.byHand,"the pointing hand beats the look");
-    const auto byLook=Select(items,4,{{.3f,4,.3f},{1,0,0},true},lookAtFeet,0,false);
-    Check(byLook.unit==4&&!byLook.byHand,"a hand on no item leaves the pick to the look");
+    // Arm out to point (12 cm), let go 6 cm nearer.
+    Check(!Pointing(false,.11f)&&Pointing(false,.12f),"12 cm out starts pointing");
+    Check(Pointing(true,.07f)&&!Pointing(true,.05f),"it lets go 6 cm nearer");
+    Check(!Pointing(true,NAN),"no tracking: not pointing");
 
-    // Held (Interact down) keeps the item whatever the aim does, while it is on the ground.
-    Check(Select(items,4,none,{{0,6,0},{0,1,0},true},2,true).unit==2,"held keeps the pick");
-    Check(Select(items,1,none,{{0,6,0},{0,1,0},true},2,true).unit==0,"held: picked up already, nothing");
-
-    // The look's ray: level with 30 degrees down lands ahead and below.
-    const auto down=Lower({0,0,1},{0,1,0},30);
-    Check(std::fabs(down.y+.5f)<1e-3f&&std::fabs(down.z-.866f)<1e-3f,"lower turns the forward down about the right axis");
-
-    // Arm out to point, with a release margin and a shorter reach pointing steeply down.
-    Check(!Pointing(false,.19f,0)&&Pointing(false,.20f,0),"20 cm out starts pointing");
-    Check(Pointing(true,.15f,0)&&!Pointing(true,.13f,0),"it lets go 6 cm nearer");
-    Check(Pointing(false,.15f,-.9f)&&!Pointing(false,.14f,-.9f),"pointing down at the feet needs 3/4 of the reach");
-    Check(!Pointing(true,NAN,0),"no tracking: not pointing");
-
-    Check(InReach(5,5.5f)&&!InReach(6,5.5f)&&!InReach(-1,5.5f)&&InReach(30,0),"pick-up reach, 0 = any distance");
+    Check(InReach(4,DefaultPickupCells)&&!InReach(4.1f,DefaultPickupCells)&&!InReach(-1,4)&&InReach(30,0),"pick-up reach 4 cells, 0 = any distance");
 
     float rgb[3];
     RarityColor(4,0,rgb);Check(rgb[2]==1&&rgb[0]<.5f,"magic is blue");
+    RarityColor(5,0,rgb);Check(rgb[1]==1&&rgb[0]<.5f,"set is green");
+    RarityColor(6,0,rgb);Check(rgb[0]==1&&rgb[1]==1&&rgb[2]<.5f,"rare is yellow");
     RarityColor(7,0,rgb);Check(rgb[0]>.8f&&rgb[2]<.5f,"unique is gold");
+    RarityColor(8,0,rgb);Check(rgb[0]==1&&rgb[1]==.6f&&rgb[2]<.2f,"crafted is orange");
     RarityColor(2,0x800,rgb);Check(rgb[0]==.6f&&rgb[1]==.6f,"a socketed normal item is gray");
     RarityColor(2,0,rgb);Check(rgb[0]==1&&rgb[1]==1&&rgb[2]==1,"a normal item is white");
-    for(uint64_t ms=0;ms<2000;ms+=37)Check(Pulse(ms)>=.6f-1e-4f&&Pulse(ms)<=1+1e-4f,"the pulse stays between 60% and full");
+
+    // The pointed name's look: in reach a rarity rim on a rarity shade at 180%, out of reach a red rim on the game's box at 130%.
+    {
+        const float blue[3]={.41f,.41f,1},gameBox[4]={.05f,.05f,.05f,.8f};
+        float rim[4],box[4];
+        for(uint64_t ms=0;ms<3000;ms+=37) {
+            RimRgba(LookFor(true),blue,ms,rim);
+            Check(rim[0]==blue[0]&&rim[2]==1&&rim[3]>=.2f-1e-4f&&rim[3]<=1+1e-4f,"in reach: the rarity rim pulses between 20% and full (1 Hz, 40%)");
+            RimRgba(LookFor(false),blue,ms,rim);
+            Check(rim[0]==RedRgb[0]&&rim[1]==RedRgb[1]&&rim[3]>=-1e-4f&&rim[3]<=.9f+1e-4f,"out of reach: a red rim up to 90% (1.5 Hz, 50%)");
+        }
+        BoxRgba(LookFor(true),gameBox,blue,box);
+        Check(std::fabs(box[0]-.41f*RarityShade)<1e-5f&&std::fabs(box[2]-RarityShade)<1e-5f&&box[3]==1,"in reach: a dark shade of the rarity color, solid");
+        BoxRgba(LookFor(false),gameBox,blue,box);
+        Check(box[0]==gameBox[0]&&box[3]==.9f,"out of reach: the game's own fill at 90%");
+        BoxRgba(LookFor(false),nullptr,blue,box);
+        Check(box[0]==0&&box[1]==0&&box[2]==0,"no fill from the game: black");
+        Check(LookFor(true).nameScale==1.8f&&LookFor(false).nameScale==1.3f&&MaxNameScale==2&&RimPx==1,"names 180% and 130%, at most twice the game's; a 1 px rim");
+        Check(Pulse(1234,0,.5f)==1,"no pulse speed: steady");
+        const int32_t label[4]={10,20,30,8};
+        int32_t ring[4][4];
+        Check(Ring(label,1,ring)==4&&Ring(label,0,ring)==0&&Ring(nullptr,1,ring)==0,"four strips, none without a width or a box");
+        Ring(label,1,ring);
+        Check(ring[0][0]==9&&ring[0][1]==19&&ring[0][2]==32&&ring[0][3]==1&&ring[1][1]==28&&ring[2][0]==9&&ring[2][3]==8&&ring[3][0]==40,
+              "top and bottom across the outer width, left and right the box's height");
+        for(int i=0;i<4;++i){
+            const bool apart=ring[i][0]+ring[i][2]<=label[0]||ring[i][0]>=label[0]+label[2]||ring[i][1]+ring[i][3]<=label[1]||ring[i][1]>=label[1]+label[3];
+            Check(apart,"the rim never covers the name's box");
+        }
+    }
+
+    // The label paint's owner (2026-10-29 log): every name laid out in one scratch box, painted from its own record.
+    {
+        int scratch[4]={},paint[8][4]={};char names[8][8]={};
+        LabelOwners<64> owners;
+        for(int i=0;i<8;++i)owners.Remember(scratch,names[i],0x1000+i);   // one eye's pass: 8 shown names
+        for(int i=0;i<8;++i)Check(owners.Unit(paint[i],names[i])==uintptr_t(0x1000+i),"each paint finds its own item, not the last laid out");
+        for(int i=0;i<8;++i)owners.Remember(scratch,names[i],0x1000+i);   // the other eye: the same slots again
+        int used=0;for(const auto& s:owners.slot)used+=s.seq!=0;
+        Check(used==8,"the second eye's pass reuses the first's slots");
+        Check(owners.Unit(scratch,nullptr)==0,"the shared scratch box alone names no item");
+        Check(owners.Unit(scratch,names[3])==0x1003,"the exact pair still finds it");
+        char unknown[8]={};
+        Check(owners.Unit(paint[0],unknown)==0,"a name never laid out: no item (an ordinary paint)");
+        owners.Remember(scratch,names[2],0x2002);   // the record now holds another item
+        Check(owners.Unit(paint[2],names[2])==0x2002,"a record reused by another item: the latest");
+        Check(owners.Find(0x2002)>=0&&owners.Find(0x1002)<0&&owners.Find(0)<0,"Find: the item's slot, a replaced item none");
+    }
+    {   // the opposite case, still right: one shared name buffer, a box of its own per label
+        char shared[8]={};int boxes[3][4]={};
+        LabelOwners<8> owners;
+        for(int i=0;i<3;++i)owners.Remember(boxes[i],shared,0x10+i);
+        for(int i=0;i<3;++i)Check(owners.Unit(boxes[i],shared)==uintptr_t(0x10+i),"own box: its item");
+        int other[4]={};
+        Check(owners.Unit(other,shared)==0,"a shared name alone names no item");
+        Check(owners.Unit(boxes[1],nullptr)==0x11,"a box held by one item: that item");
+    }
+    {   // full: the least recently written slot goes, a refreshed one stays
+        int scratch[4]={};char names[5][4]={};
+        LabelOwners<4> owners;
+        for(int i=0;i<4;++i)owners.Remember(scratch,names[i],0x100+i);
+        owners.Remember(scratch,names[0],0x100);   // names[0] laid out again: now the newest
+        owners.Remember(scratch,names[4],0x104);   // evicts names[1], the oldest
+        Check(owners.Unit(nullptr,names[0])==0x100&&owners.Unit(nullptr,names[4])==0x104,"refreshed and new kept");
+        Check(owners.Unit(nullptr,names[1])==0,"the oldest evicted");
+        Check(owners.Unit(nullptr,names[2])==0x102&&owners.Unit(nullptr,names[3])==0x103,"the rest kept");
+    }
+
+    // The pointed item's name when the game lays out none: Show items held for it alone.
+    {
+        Check(HoldsForPointed(true,true,false),"an item pointed at, in the world, the stick not holding: held for it");
+        Check(!HoldsForPointed(false,true,false)&&!HoldsForPointed(true,false,false),"nothing pointed at, or out of the world: no hold");
+        Check(!HoldsForPointed(true,true,true),"the stick holding Show items: not ours, every name as before");
+        Check(PointedNow(1000,1000)&&PointedNow(1000,1000+PointedFreshMs-1)&&!PointedNow(1000,1000+PointedFreshMs)&&
+              !PointedNow(0,50)&&!PointedNow(2000,1000),"a pointing is fresh for 200 ms; none or a clock step back is not");
+        Check(OnlyPointedUntil(true,false,0,1000,300)==1300,"holding: the other names cut a lease ahead");
+        Check(OnlyPointedUntil(false,false,1300,1001,300)==1001+PointedTailMs,"the hold just ended: a short tail");
+        Check(OnlyPointedUntil(false,false,1001+PointedTailMs,1100,300)==1001+PointedTailMs,"the tail does not move on");
+        Check(OnlyPointedUntil(false,false,0,1100,300)==0,"never held: no cut");
+        Check(OnlyPointedUntil(true,true,1300,1100,300)==0&&OnlyPointedUntil(false,true,1300,1100,300)==0,"the stick holding: no cut at once");
+        Check(OnlyPointed(1300,1299)&&!OnlyPointed(1300,1300)&&!OnlyPointed(0,5),"cut while before the end only");
+    }
+
+    // The pointing hand stays awake in the world while the motion layer is off, never in menus or the wheel.
+    {
+        Check(AwakeWorld(0,false)&&AwakeWorld(GateInteraction|GateBlood,false),"in the world (an interaction starting, a blood wipe): the hand points");
+        for(uint32_t g:{GateControls,GateChain,GateHead,GatePanel,GateSpatial,GateSettings,GateChord,GateInventory,GateMenu,GateWorld})
+            Check(!AwakeWorld(g,false),"a menu, panel, VR Settings or no world: the hand does not point");
+        Check(!AwakeWorld(0,true),"the skill wheel open: the hand does not point");
+        Check(HandLive(true,true,HandFreshMs)&&!HandLive(true,true,HandFreshMs+1)&&!HandLive(true,false,0)&&!HandLive(false,true,0),
+              "a tracked hand read just now, in the world");
+        char text[160];
+        GateText(0,text,sizeof text);Check(std::strcmp(text,"none")==0,"no reason: none");
+        GateText(GateInteraction|GateSettings,text,sizeof text);Check(std::strcmp(text,"VR Settings, interaction")==0,"the reasons as words");
+        char tiny[8];GateText(GateInteraction|GateSettings,tiny,sizeof tiny);Check(std::strlen(tiny)<sizeof tiny,"a short buffer is cut, never overrun");
+    }
+
+    // The headset gate (2026-10-29: A's target is asked between our frame pairs, where Active is false).
+    Check(InHeadset(true,0,1000)&&InHeadset(true,5000,1000),"inside a headset frame: in the headset");
+    Check(InHeadset(false,1000,1000+16)&&InHeadset(false,1000,1000+HeadsetGapMs),
+          "between two headset frames (A's press in the game's logic): still in the headset, so the pick is handed");
+    Check(!InHeadset(false,1000,1000+HeadsetGapMs+1),"no headset frame for longer than the gap: out (headset off, flat panel)");
+    Check(!InHeadset(false,0,0)&&!InHeadset(false,0,100)&&!InHeadset(false,0,HeadsetGapMs),"no headset frame ever (desktop play): never, the game's own pick");
+    Check(InHeadset(false,1001,1000),"a stamp just after this thread read the clock: a frame just now");
+    Check(InHeadset(false,1000,1100,100)&&!InHeadset(false,1000,1101,100),"the gap is a parameter");
 
     // The room walk: the hero's room and its near rooms, units linked at +0x160.
     Memory m;

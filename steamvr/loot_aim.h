@@ -1,32 +1,32 @@
 #pragma once
 #include "frame_math.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 
 namespace framevr::lootaim {
 // Loot pick: which dropped item Interact (A) takes. The game's own answer
 // (InteractTarget 0x18D960) is the item nearest the hero, so with several on
 // the floor A kept taking the closest one, never the one the player wanted.
-// Here the player chooses: the item nearest where the aiming hand's ray meets
-// the floor while the arm is held out to point, else the one nearest where the
-// look meets the floor. Values tuned in the headset (2026-10-18/19).
-constexpr int MaxItems=96;
+// Here the player chooses by pointing: the item nearest where the dominant
+// hand's ray meets the floor while that arm is held out. Values tuned in the
+// headset (2026-10-18 to 10-29).
+constexpr int MaxItems=60;               // the most dropped items one walk keeps
 constexpr float CellUnits=2.f;           // world units per grid cell (render = grid*2)
-constexpr float PickRadiusCells=1.f;     // an item this far from the aim's floor point can be picked
+constexpr float PickRadiusCells=1.5f;    // an item this far from the pointed floor spot can be picked
 constexpr float KeepFactor=1.3f;         // the current pick stays while inside the radius times this
-constexpr float SwitchShare=.25f;        // another item takes over when nearer by this share of the radius
-constexpr float ReachCells=25.f;         // never an item farther than this from the hero
-constexpr float LookDownDeg=0.f;         // the look is the head's forward (tuned in the headset from 8 to 0)
-constexpr float DefaultPickupCells=5.5f; // [interactions] loot_pick_reach_cells: A picks up without walking
-// The aiming hand points while held out from the head (horizontal reach, m);
-// it lets go 6 cm nearer so the answer does not flicker. Pointing steeply down
-// at an item by the feet the arm cannot reach as far: 3/4 of the distance counts.
-constexpr float ArmOutM=.20f,ArmReleaseM=.06f,DownDip=-.75f,DownShare=.75f;
+constexpr float SwitchCells=.25f;        // another item takes over when nearer by this much (cells)
+constexpr float ReachCells=40.f;         // never an item farther than this from the hero
+constexpr float DefaultPickupCells=4.f;  // [interactions] loot_pick_reach_cells: A picks up without walking
+// The hand points while held out from the head (horizontal reach, m); it lets
+// go 6 cm nearer so the answer does not flicker.
+constexpr float ArmOutM=.12f,ArmReleaseM=.06f;
 
 struct Item {uintptr_t unit;math::Vec at;float heroCells;};   // at: the item's floor point in the world
 struct Ray {math::Vec origin,direction;bool valid=false;};
-struct Choice {uintptr_t unit=0;bool byHand=false;float distance=0;};   // distance from the aim's floor point (world units)
+struct Choice {uintptr_t unit=0;float distance=0;};   // distance from the pointed floor spot (world units)
 
 // How far the item lies on the floor from where the ray meets the floor at the
 // item's height; a ray level or upward never meets it.
@@ -37,16 +37,10 @@ inline float FloorDistance(const Ray& ray,math::Vec at) {
     return std::hypot(ray.origin.x+d.x*t-at.x,ray.origin.z+d.z*t-at.z);
 }
 
-// The forward ray turned down by degrees about the head's right axis (up is the head's up).
-inline math::Vec Lower(math::Vec forward,math::Vec up,float degrees) {
-    const float r=degrees*.01745329f,c=std::cos(r),s=std::sin(r);
-    return {forward.x*c-up.x*s,forward.y*c-up.y*s,forward.z*c-up.z*s};
-}
-
 // The item nearest the ray's floor point inside radius, keeping current while it
-// is inside radius*KeepFactor and nothing beats it by the switch margin, so two
-// items side by side do not flicker.
-inline Choice Best(const Item* items,int count,const Ray& ray,float radius,uintptr_t current) {
+// is inside radius*KeepFactor and nothing beats it by margin, so two items side
+// by side do not flicker. Radius and margin in world units.
+inline Choice Best(const Item* items,int count,const Ray& ray,float radius,float margin,uintptr_t current) {
     Choice best{},kept{};
     if(!ray.valid||!items)return {};
     float bestValue=radius,keptValue=-1;
@@ -54,40 +48,32 @@ inline Choice Best(const Item* items,int count,const Ray& ray,float radius,uintp
         const auto& item=items[i];
         if(!item.unit||!(item.heroCells<=ReachCells))continue;
         const float a=FloorDistance(ray,item.at);
-        if(item.unit==current&&a<=radius*KeepFactor){keptValue=a;kept={item.unit,false,a};}
-        if(a<bestValue){bestValue=a;best={item.unit,false,a};}
+        if(item.unit==current&&a<=radius*KeepFactor){keptValue=a;kept={item.unit,a};}
+        if(a<bestValue){bestValue=a;best={item.unit,a};}
     }
-    if(keptValue>=0&&(!best.unit||best.distance>keptValue-radius*SwitchShare))return kept;
+    if(keptValue>=0&&(!best.unit||best.distance>keptValue-margin))return kept;
     return best;
 }
 
-// The pointing hand first while it is on an item, else the look. held (Interact
-// down) keeps the current item while it is still on the ground and in reach, so
-// the hand drifting during the press never changes what A acts on.
-inline Choice Select(const Item* items,int count,const Ray& hand,const Ray& look,uintptr_t current,bool held) {
-    if(held&&current)
-        for(int i=0;i<count;++i)if(items[i].unit==current&&items[i].heroCells<=ReachCells)return {current,false,0};
-    const float radius=PickRadiusCells*CellUnits;
-    Choice c=Best(items,count,hand,radius,current);
-    if(c.unit){c.byHand=true;return c;}
-    return Best(items,count,look,radius,current);
+// The item the pointing hand is on, or none (an invalid ray: the arm is not out).
+inline Choice Select(const Item* items,int count,const Ray& hand,uintptr_t current) {
+    return Best(items,count,hand,PickRadiusCells*CellUnits,SwitchCells*CellUnits,current);
 }
 
-// Is the aiming hand held out to point? reachM: its horizontal distance from
-// the head; rayY: the ray's vertical component. on is the previous answer.
-inline bool Pointing(bool on,float reachM,float rayY) {
-    if(!std::isfinite(reachM)||!std::isfinite(rayY))return false;
-    const float need=(on?ArmOutM-ArmReleaseM:ArmOutM)*(rayY<DownDip?DownShare:1.f);
-    return reachM>=need;
+// Is the hand held out to point? reachM: its horizontal distance from the head;
+// on is the previous answer.
+inline bool Pointing(bool on,float reachM) {
+    if(!std::isfinite(reachM))return false;
+    return reachM>=(on?ArmOutM-ArmReleaseM:ArmOutM);
 }
 
 // Close enough for A to pick it up without walking? limit 0 = any distance.
 inline bool InReach(float cells,float limit) {return limit<=0||(cells>=0&&cells<=limit);}
 
-// The item's name color, as the game draws it, for its highlight: white normal
-// (gray when socketed or ethereal), blue magic, green set, yellow rare, gold
-// unique, orange crafted/tempered. Item data (unit +0x10): quality +0x00
-// (1 low .. 8 crafted), flags +0x18 (0x800 socketed, 0x400000 ethereal).
+// The item's name color, as the game draws it: white normal (gray when
+// socketed or ethereal), blue magic, green set, yellow rare, gold unique,
+// orange crafted/tempered. Item data (unit +0x10): quality +0x00 (1 low ..
+// 8 crafted), flags +0x18 (0x800 socketed, 0x400000 ethereal).
 inline void RarityColor(uint32_t quality,uint32_t flags,float rgb[3]) {
     float c[3]={1,1,1};
     switch(quality) {
@@ -101,8 +87,149 @@ inline void RarityColor(uint32_t quality,uint32_t flags,float rgb[3]) {
     std::copy_n(c,3,rgb);
 }
 
-// The highlight's gentle pulse (1.5 Hz, between 60% and full), as an alpha.
-inline float Pulse(uint64_t ms) {return .8f+.2f*std::sin(float(ms%100000)*.0062831853f*1.5f);}
+// The pointed item's name, as it is drawn: in reach (A takes it from here) a rim
+// in its rarity color, a dark shade of that color behind the name and the name
+// at 180%; out of reach (A takes nothing) a red rim on the game's own box and the
+// name at 130%. Each rim pulses. Values tuned in the headset (2026-10-29).
+struct NameLook {
+    bool rarityRim;        // the rim in the item's rarity color, else red
+    float rimAlpha;        // the rim's opacity at the pulse's peak
+    float pulseHz,pulseDepth;
+    bool rarityBox;        // the box a dark shade of the rarity color, else the game's own fill
+    float boxAlpha;
+    float nameScale;       // the name's size, times the game's (capped at MaxNameScale)
+};
+inline constexpr NameLook InReachLook{true,1.f,1.f,.4f,true,1.f,1.8f};
+inline constexpr NameLook OutOfReachLook{false,.9f,1.5f,.5f,false,.9f,1.3f};
+constexpr float MaxNameScale=2.f;
+constexpr int RimPx=1;
+constexpr float RedRgb[3]={1.f,.22f,.18f};
+// A box in the name's own rarity color would hide the name (drawn in that color):
+// this dark a shade of it keeps the hue and the contrast of the game's dark box.
+constexpr float RarityShade=.3f;
+inline const NameLook& LookFor(bool inReach) {return inReach?InReachLook:OutOfReachLook;}
+
+// The pulse as an alpha: steady (0 Hz) is full; else between 1-2*depth and 1.
+inline float Pulse(uint64_t ms,float hz,float depth) {
+    if(!(hz>0))return 1;
+    return 1-depth+depth*std::sin(float(ms%100000)*.0062831853f*hz);
+}
+// The rim's color and alpha now.
+inline void RimRgba(const NameLook& look,const float rarity[3],uint64_t ms,float out[4]) {
+    for(int i=0;i<3;++i)out[i]=std::clamp(look.rarityRim?rarity[i]:RedRgb[i],0.f,1.f);
+    out[3]=look.rimAlpha*Pulse(ms,look.pulseHz,look.pulseDepth);
+}
+// The box's fill: the game's (null when it passed none: black) or the rarity shade.
+inline void BoxRgba(const NameLook& look,const float* game,const float rarity[3],float out[4]) {
+    for(int i=0;i<3;++i)out[i]=look.rarityBox?std::clamp(rarity[i],0.f,1.f)*RarityShade:game?game[i]:0.f;
+    out[3]=look.boxAlpha;
+}
+// The rim round box {x, y, w, h} (the game's label box), pad pixels thick: top,
+// bottom (each across the full outer width), then left and right. Returns the
+// strips written: 0 for no pad or an empty box. The strips never cover the box.
+inline int Ring(const int32_t box[4],int32_t pad,int32_t out[4][4]) {
+    if(!box||pad<=0||box[2]<=0||box[3]<=0)return 0;
+    const int32_t x=box[0],y=box[1],w=box[2],h=box[3];
+    const int32_t strips[4][4]={{x-pad,y-pad,w+2*pad,pad},{x-pad,y+h,w+2*pad,pad},{x-pad,y,pad,h},{x+w,y,pad,h}};
+    for(int i=0;i<4;++i)for(int j=0;j<4;++j)out[i][j]=strips[i][j];
+    return 4;
+}
+
+// Which item a label paint belongs to, from the layouts that showed it. The game
+// lays every name out through one scratch box and paints from each label's own
+// record (2026-10-29 log: 2707 of 2707 paints matched their layout by name, none
+// by box), so a table keyed by box found only the last name laid out. A slot is
+// the pair (box, name); a lookup takes the exact pair, else a name, else a box
+// that every slot holding it agrees on; anything ambiguous is 0 (an ordinary
+// name). The least recently written slot is reused.
+template<int N> struct LabelOwners {
+    static_assert(N>0);
+    struct Slot {const void* box=nullptr;const void* name=nullptr;uintptr_t unit=0;uint64_t seq=0;};
+    Slot slot[N]{};
+    uint64_t seq=0;
+    // The slot written; the caller may keep more (the name's text) at the same index.
+    int Remember(const void* box,const void* name,uintptr_t unit) {
+        int at=-1;
+        for(int i=0;i<N&&at<0;++i)if(slot[i].seq&&slot[i].box==box&&slot[i].name==name)at=i;
+        if(at<0){at=0;for(int i=1;i<N;++i)if(slot[i].seq<slot[at].seq)at=i;}   // an empty slot (seq 0) first, else the oldest
+        slot[at]={box,name,unit,++seq};
+        return at;
+    }
+    uintptr_t Unit(const void* box,const void* name) const {
+        if(box&&name)for(const auto& s:slot)if(s.seq&&s.box==box&&s.name==name)return s.unit;
+        if(const uintptr_t u=Agreed(&Slot::name,name))return u;
+        return Agreed(&Slot::box,box);
+    }
+    // The newest slot holding unit, or -1.
+    int Find(uintptr_t unit) const {
+        int at=-1;
+        for(int i=0;i<N;++i)if(unit&&slot[i].seq&&slot[i].unit==unit&&(at<0||slot[i].seq>slot[at].seq))at=i;
+        return at;
+    }
+private:
+    uintptr_t Agreed(const void* Slot::*key,const void* v) const {
+        if(!v)return 0;
+        uintptr_t u=0;
+        for(const auto& s:slot){
+            if(!s.seq||!s.unit||s.*key!=v)continue;
+            if(u&&s.unit!=u)return 0;   // two items on this address: not knowable from it
+            u=s.unit;
+        }
+        return u;
+    }
+};
+
+// The pointed item's name when the game lays out none (2026-10-29 headset: an
+// item a few cells off showed its name only while the right stick held Show
+// items). While an item is pointed at, Show items is held for it (transport),
+// so the game lays its name out, and every other name is cut in the label
+// layout: the pointed one shows by itself. The right stick holding Show items
+// shows every name, as before. vrcam stamps pointedAt (GetTickCount64) each
+// frame an item is pointed at; transport writes onlyPointedUntil.
+inline std::atomic<uint64_t> pointedAt{0};
+inline std::atomic<uint64_t> onlyPointedUntil{0};
+constexpr uint64_t PointedFreshMs=200;   // a pointing older than this is over (no frame published it)
+inline bool PointedNow(uint64_t at,uint64_t now) {return at&&now>=at&&now-at<PointedFreshMs;}
+inline bool HoldsForPointed(bool pointed,bool inWorld,bool stickHolds) {return pointed&&inWorld&&!stickHolds;}
+// Until when the other names are cut: while held, the hold's lease ahead; once it
+// ends, a short tail while the game lets Show items go, so the other names do not
+// flash up; the stick holding: no cut at all.
+constexpr uint64_t PointedTailMs=150;
+inline uint64_t OnlyPointedUntil(bool holding,bool stickHolds,uint64_t was,uint64_t now,uint64_t leaseMs) {
+    if(stickHolds)return 0;
+    if(holding)return now+leaseMs;
+    return was?std::min(was,now+PointedTailMs):0;
+}
+inline bool OnlyPointed(uint64_t until,uint64_t now) {return until&&now<until;}
+
+// The pointing hand keeps working while the motion layer is off for reasons that
+// leave you in the world (an interaction starting, a buttons rearm, a slow frame),
+// as long as it is tracked; never in menus, VR Settings, panels or with the skill
+// wheel open. Without it, an A press could find no pointing hand (2026-10-25).
+// transport's reasons for the motion layer being off, one bit each.
+enum Gate : uint32_t {
+    GateControls=1u<<0,GateChain=1u<<1,GateHead=1u<<2,GatePanel=1u<<3,GateSpatial=1u<<4,GateSettings=1u<<5,
+    GateChord=1u<<6,GateInventory=1u<<7,GateMenu=1u<<8,GateWorld=1u<<9,GateInteraction=1u<<10,GateBlood=1u<<11,
+};
+constexpr uint32_t WorldGates=GateControls|GateChain|GateHead|GatePanel|GateSpatial|GateSettings|GateChord|GateInventory|GateMenu|GateWorld;
+inline bool AwakeWorld(uint32_t gate,bool wheelOpen) {return (gate&WorldGates)==0&&!wheelOpen;}
+constexpr uint64_t HandFreshMs=150;   // the hand's pose read at most this long ago
+inline bool HandLive(bool world,bool handTracked,uint64_t ageMs) {return handTracked&&ageMs<=HandFreshMs&&world;}
+// "interaction, blood wipe"; "none" while the motion layer is on.
+inline void GateText(uint32_t gate,char* out,size_t size) {
+    if(!out||!size)return;
+    out[0]=0;
+    static const char* const parts[]={"motion controls off","no gameplay layer","head not tracked","flat menu panel","menu in the world",
+        "VR Settings","settings chord","inventory button","menu button","not in the world","interaction","blood wipe"};
+    size_t n=0;
+    for(int i=0;i<12;++i) {
+        if(!(gate&(1u<<i)))continue;
+        const int w=std::snprintf(out+n,size-n,"%s%s",n?", ":"",parts[i]);
+        if(w<0||size_t(w)>=size-n){out[size-1]=0;return;}
+        n+=size_t(w);
+    }
+    if(!n)std::snprintf(out,size,"none");
+}
 
 // An item (unit type 4) on the ground (mode 3) or dropping (mode 5): picked up
 // (stored, on the cursor, in the belt) it is no longer one.
@@ -120,6 +247,18 @@ inline bool Usable(uint32_t type,uint32_t mode,bool sameArea,uint64_t ageMs) {re
 // freed unit keeps its old header bytes, but it is gone from the room lists.
 inline bool HandOver(const uint32_t* header,uint32_t pickId,bool sameArea,uint64_t ageMs,bool walkFound) {
     return walkFound&&Usable(header[0],header[3],sameArea,ageMs)&&header[2]==pickId;
+}
+
+// In the headset: the pick works only there (desktop play keeps the game's own).
+// framevr::Active is true only inside our frame pair (xrBeginFrame to xrEndFrame
+// around the game's draw), but the game reads A and asks what Interact takes in
+// its own logic, between two pairs, where Active reads false (2026-10-29 log: 10
+// A presses, every one handed nothing). So a headset frame up to HeadsetGapMs ago
+// counts too; with no headset frame ever (desktop) it is false. A stamp a little
+// after now (another thread stamped it after this one read the clock) is a frame just now.
+constexpr uint64_t HeadsetGapMs=500;
+inline bool InHeadset(bool frameNow,uint64_t lastFrameAt,uint64_t now,uint64_t gapMs=HeadsetGapMs) {
+    return frameNow||(lastFrameAt!=0&&(lastFrameAt>=now||now-lastFrameAt<=gapMs));
 }
 
 // What tells areas apart for the pick: the hero unit, the game's area id (0 while
@@ -191,7 +330,7 @@ int Collect(uintptr_t hero,Read read,uintptr_t* units,uint32_t* ids,float* cells
 }
 
 // A fresh walk's answer for the pick: still on the floor in the hero's rooms with
-// the same unit id, its cell now and the hero's (for the reach and the glow).
+// the same unit id, its cell now and the hero's (for the reach).
 struct Live {bool found=false;uint32_t header[4]{};float x=0,y=0,heroX=0,heroY=0;};
 template<class Read>
 Live Find(uintptr_t hero,Read read,uintptr_t item,uint32_t id) {
