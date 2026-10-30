@@ -4,7 +4,8 @@
 namespace framevr::stickgestures {
 // The right stick's up and down in the world (its sideways pushes turn): up
 // toggles running and walking, once per push; down, while held, shows every
-// nearby loot label (the game's Show items, Alt). A push counts only when
+// nearby loot label (the game's Show items, Alt), or with the Loot names latch
+// toggles them once per push (Result::toggleLoot). A push counts only when
 // mostly vertical. From then until the stick returns near the centre it turns
 // nothing, so a slightly diagonal push never snap-turns, and a sideways push
 // that slides up or down is still a turn.
@@ -36,5 +37,18 @@ public:
         r.owned=direction!=Direction::None;
         return r;
     }
+};
+// Loot names latch ([hud] labels_latch): a down push (Result::toggleLoot) shows the names
+// until the next one. Off, or leaving the world, clears it. With Latch Off the
+// caller uses Result::showLoot (the hold) and this stays false.
+class LootLatch {
+    bool on=false;
+public:
+    bool Step(bool latch,bool world,bool toggle) {
+        if(!latch||!world)on=false;
+        else if(toggle)on=!on;
+        return on;
+    }
+    void Reset(){on=false;}
 };
 }

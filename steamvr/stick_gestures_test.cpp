@@ -38,6 +38,19 @@ int main() {
     Check(!g.Step(true,NAN,1).owned&&!g.Step(true,0,1).toggleRun,"a broken sample is an interruption");
     g.Step(true,0,0);g.Step(true,0,1);g.Reset();
     Check(!g.Step(true,0,1).owned,"Reset drops a push");
+    {   // the loot names latch
+        LootLatch l;
+        Check(!l.Step(false,true,true),"Latch Off: a push shows nothing (the hold is used)");
+        Check(l.Step(true,true,true),"one push turns the names on");
+        Check(l.Step(true,true,false),"and they stay");
+        Check(!l.Step(true,true,true),"the next push turns them off");
+        l.Step(true,true,true);
+        Check(!l.Step(true,false,false)&&!l.Step(true,true,false),"leaving the world clears it, and it does not come back");
+        l.Step(true,true,true);
+        Check(!l.Step(false,true,false)&&!l.Step(true,true,false),"turning Latch Off clears it");
+        l.Step(true,true,true);l.Reset();
+        Check(!l.Step(true,true,false),"Reset clears it");
+    }
     std::puts("Right stick gestures: up toggles run / walk once per push, down holds the loot labels, turns and interruptions keep out");
     return 0;
 }

@@ -611,6 +611,7 @@ XrPosef head{};
 math::Vec origin{};
 bool haveOrigin=false;
 GripStickButton leftMenuButton;
+stickgestures::LootLatch lootNamesLatch;   // [hud] labels_latch: down pushes show / hide the loot names; cleared with the input
 stickgestures::Gestures rightStickGestures;   // right stick up: run / walk (Movement speed's Stick toggle); down: loot labels
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
@@ -1016,7 +1017,7 @@ void ClearInput() {
     hapticPulses.Cancel();
     spellHaptics.Clear();
     lootlabels::display.Clear();
-    rightStickGestures.Reset();
+    rightStickGestures.Reset();lootNamesLatch.Reset();
     meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=parryMissAt=0;
     wristHeading.Reset();compassFrame=false;mapZoom.Reset();wristMapLooked=false;
     panelinput::WorldInput(false);
@@ -2839,13 +2840,13 @@ void Input() {
         controls.rx/32767.f,controls.ry/32767.f);
     if(rightStick.owned)controls.rx=controls.ry=0;
     // Loot names latch (hud.labels_latch): a down push shows the names until the next one,
-    // instead of only while held. Leaving the world, a wheel or turning it Off clears it.
-    static bool lootLatched=false;
-    const auto latchSettings=vrsettings::Read();
-    const bool lootLatch=latchSettings.ready&&latchSettings.values[settings::LootLabelLatch]>.5f;
-    if(!lootLatch||!lootWorld)lootLatched=false;
-    else if(rightStick.toggleLoot)lootLatched=!lootLatched;
-    const bool lootHeld=lootLatch?lootLatched:rightStick.showLoot;
+    // instead of only while held. Leaving the world (a menu, VR Settings, loading, lost head
+    // tracking, focus loss) or turning it Off clears it; while a wheel is open or the wrist map
+    // is looked at, pushes do nothing and the names stay as they are.
+    const auto hudSettings=vrsettings::Read();
+    const bool lootLatch=hudSettings.ready&&hudSettings.values[settings::LootLabelLatch]>.5f;
+    const bool latchedOn=lootNamesLatch.Step(lootLatch,lootWorld,rightStick.toggleLoot);
+    const bool lootHeld=lootLatch?latchedOn:rightStick.showLoot;
     const bool wasLootHeld=lootlabels::display.ShowAll(lootNow);
     lootlabels::display.Refresh(lootSession,lootNow,lootWorld,lootHeld);
     if(lootHeld!=wasLootHeld) {
@@ -2891,7 +2892,6 @@ void Input() {
     // Right stick up switches running / walking only with Movement speed's Stick toggle on
     // (below, off by default). The push is owned either way, so it never snap-turns.
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
-    const auto hudSettings=vrsettings::Read();
     interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));
     interactionInput.vitalsLocation=vitals::Location(int(hudSettings.values[settings::VitalsLocation]));
     {   // the HUD held with the menu: its picture and map (the map lease may open the game's map under the menu)
