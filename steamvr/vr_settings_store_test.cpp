@@ -30,9 +30,8 @@ int main(){
     Check(vrsettings::Read().values[MapTopDown]==1&&vrsettings::Read().values[MapRotate]==1,"HUD uses the existing wrist-map saved keys");
     // Map view cycles Isometric, Top-down, Full map, Full top-down; Rotate map toggles.
     for(int choice:{2,3,0,1}){
-        const auto current=vrsettings::Read();Model map;map.Open(current);map.Click({Kind::Tab,int(Page::HUD)});
-        auto click=[&](Rect box){return HitTest(Page::HUD,(box.x+box.w*.5f)/Width,(box.y+box.h*.5f)/Height);};
-        map.Click(click(HudMapViewBox));map.Click(click(HudMapRotateBox));
+        const auto current=vrsettings::Read();Model map;map.Open(current);
+        map.Click({Kind::Change,MapTopDown,1});map.Click({Kind::Change,MapRotate,1});   // Map view one step on, Rotate map flipped
         const auto request=map.Click({Kind::Apply});
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save HUD map choices through the normal transaction");
         const auto saved=vrsettings::Read();const int rotate=choice%2;
@@ -208,7 +207,7 @@ int main(){
     Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1&&before.values[ObjectDistance]==210,"explicit distance retained; missing object distance uses shipped default");
     Check(WritePrivateProfileStringW(L"render",L"rings",nullptr,name),"remove terrain distance in isolated legacy profile");
     vrsettings::Poll(name);before=vrsettings::Read();
-    Check(before.values[DrawDistance]==2&&before.values[ObjectDistance]==210,"missing draw distances do not silently select 4 rings and radius 1000");
+    Check(before.values[DrawDistance]==6&&before.values[ObjectDistance]==210,"missing draw distances take the shipped defaults: 6 rings, objects 210");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"restore explicit terrain distance");
     vrsettings::Poll(name);before=vrsettings::Read();
     // Old separate switches migrate only until an explicit combined choice exists.
@@ -292,8 +291,8 @@ int main(){
     saved=vrsettings::Read();
     Check(saved.values[PlanarSpellAim]==0&&Int(path,L"gameplay",L"planar_spell_aim")==0,"free aim restore survives INI reload");
     Check(saved.values[ControllerLabels]==0,"existing INI defaults to automatic labels");
-    model.Open(saved);model.Click({Kind::Tab,int(Page::VR)});model.Click({Kind::ControllerMenu});
-    model.Click({Kind::ControllerChoice,int(framevr::controllers::Choice::Index)});request=model.Click({Kind::Apply});
+    model.Open(saved);model.Set(ControllerLabels,float(int(framevr::controllers::Choice::Index)));   // Button names: Index
+    request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"controller override saves through INI transaction");
     saved=vrsettings::Read();
     Check(saved.values[ControllerLabels]==2&&Int(path,L"interactions",L"controller_labels")==2,"controller selection survives reload");
@@ -398,18 +397,18 @@ int main(){
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save companion count preference");
         Check(vrsettings::Read().values[CompanionCounts]==enabled&&Int(path,L"interactions",L"companion_counts")==enabled&&Int(path,L"custom",L"keep")==12345,"companion preference survives reload without touching other settings");
     }
-    // Loot pick, the Loot tab's row: Off when missing, each choice saved as [interactions] loot_pick.
+    // Loot pick (#257): Off when missing, On and Off saved as [interactions] loot_pick; the retired 2 (On with glow) reads On.
     Check(vrsettings::Read().values[LootPick]==0&&Int(path,L"interactions",L"loot_pick")==-999,"a profile without loot_pick reads Off");
-    for(int choice:{1,2,0}) {
-        const auto current=vrsettings::Read();model.Open(current);model.Click({Kind::Tab,int(Page::Loot)});
-        const auto rows=model.Rows();const Rect plus=Increase(0);
-        model.Click(HitTest(Page::Loot,(plus.x+plus.w*.5f)/Width,(plus.y+plus.h*.5f)/Height,false,&rows));
-        request=model.Click({Kind::Apply});
-        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save the loot pick from the Loot tab");
+    for(int enabled:{1,0}) {
+        const auto current=vrsettings::Read();
+        model.Open(current);model.Click({Kind::Change,LootPick,enabled?1:-1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save the loot pick");
         const auto saved=vrsettings::Read();
-        Check(saved.values[LootPick]==choice&&Int(path,L"interactions",L"loot_pick")==choice&&
-              Changed(saved.values,current.values)==(ChangeMask{1}<<LootPick)&&Int(path,L"custom",L"keep")==12345,"each loot pick choice survives reload and touches nothing else");
+        Check(saved.values[LootPick]==enabled&&Int(path,L"interactions",L"loot_pick")==enabled&&
+              Changed(saved.values,current.values)==(ChangeMask{1}<<LootPick)&&Int(path,L"custom",L"keep")==12345,"the loot pick survives reload and touches nothing else");
     }
+    Check(WritePrivateProfileStringW(L"interactions",L"loot_pick",L"2",name),"write the retired On with glow");
+    vrsettings::Poll(name);Check(vrsettings::Read().values[LootPick]==1,"the retired On with glow reads On");
     Check(WritePrivateProfileStringW(L"interactions",L"loot_pick",L"7",name),"write an unknown loot pick");
     vrsettings::Poll(name);Check(vrsettings::Read().values[LootPick]==0,"an unknown loot_pick reads Off");
     Check(WritePrivateProfileStringW(L"interactions",L"loot_pick",nullptr,name),"remove the loot pick");

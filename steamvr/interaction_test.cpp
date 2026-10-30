@@ -78,19 +78,19 @@ int main(){
         s.Step();s.in.hover=8;s.in.trigger=1;s.Step();Check(s.out.request.action==Action::BindItem&&!s.out.request.index&&!s.out.request.item.handle,"clear slot uses explicit empty assignment");
     }
     {
-        Sim s;quick(s);s.in.hover=RunWalkCell;s.in.trigger=1;s.Step();
-        Check(s.out.request.action==Action::RunWalk&&!s.out.wheel,"run/walk dispatches native toggle");
-        Check(s.Step(40).request.action==Action::None,"holding run/walk never toggles repeatedly");
-        Sim stick;stick.in.runWalk=true;stick.Step();
-        Check(stick.out.request.action==Action::RunWalk&&stick.out.feedback==1&&stick.out.feedbackHand==0,"right stick up toggles run / walk without the wheel");
-        stick.in.runWalk=false;Check(stick.Step().request.action==Action::None,"once per push");
-        Sim stale;stale.in.snapshot.session=99;stale.in.runWalk=true;stale.Step();
-        Check(stale.out.request.action==Action::None&&stale.out.feedback==3,"an unknown character buzzes instead");
+        Sim s;quick(s);
+        // The movement slider's gait: the transport asks for the game's run / walk toggle when the
+        // hero moves in the other gait; the engine sends it like any native action, without a tick.
+        Sim gait;gait.in.gaitToggle=true;gait.Step();
+        Check(gait.out.request.action==Action::RunWalk&&gait.out.feedback==0,"a gait mismatch sends the native run / walk toggle silently");
+        gait.in.gaitToggle=false;Check(gait.Step().request.action==Action::None,"once per mismatch the transport reports");
+        Sim stale;stale.in.snapshot.session=99;stale.in.gaitToggle=true;stale.Step();
+        Check(stale.out.request.action==Action::None&&stale.out.feedback==0,"an unknown character: no toggle, no buzz");
         auto c=Context(s.in.snapshot,s.out,true);s.in.snapshot.quick.items[0].quantity--;
         Check(c!=Context(s.in.snapshot,s.out,true),"count changes invalidate paint and old click eligibility");
         for(auto page:{MenuPage::Spells,MenuPage::Equipment}) {
             Check(WheelCell(.1f,.1f,-1,page,1)==QuickUseCell,"quick slot shares hit and paint bounds");
-            Check(WheelCell(.85f,.07f,-1,page,1)==RunWalkCell,"run/walk shares hit and paint bounds");
+            Check(WheelCell(.85f,.14f,-1,page,1)==-1,"no RUN / WALK box or movement slider on the wheel (VR Settings > Body > Movement speed)");
         }
         for(auto page:{MenuPage::Map,MenuPage::Developer,MenuPage::EditSlots,MenuPage::EditSkills,MenuPage::EditItems})
             Check(WheelCell(.1f,.1f,-1,page,1)!=QuickUseCell,"hidden quick control never intercepts another page");
@@ -133,7 +133,10 @@ int main(){
         s.in.trigger=0;s.Step();s.in.hover=9;s.in.trigger=1;s.Step();
         Check(!s.out.developer&&!s.out.utility&&!s.out.map,"spells footer leaves dev page");
         s.in.trigger=0;s.Step();s.in.hover=13;s.in.trigger=1;s.Step();
-        s.in.wheel=false;s.Step();Check(!s.out.developer,"closing wheel resets developer page");
+        s.in.wheel=false;s.Step();s.in.trigger=0;s.Step();s.in.wheel=true;s.in.hover=-1;s.Step();
+        Check(s.out.developer&&s.e.Page()==MenuPage::Developer,"a plain close keeps the developer page for the next open");
+        s.in.cancel=true;s.Step();s.in.cancel=false;s.in.wheel=false;s.Step();s.in.wheel=true;s.Step();
+        Check(!s.out.developer&&s.e.Page()==MenuPage::Spells,"the engine's cancel (no button sends it in game) leaves the developer page, as before");
         const auto tab=FooterBounds(4,MenuPage::Spells,true);
         Check(WheelCell((tab.left+tab.right)/2,.93f,-1,MenuPage::Spells,0,true)==13,"developer footer hit matches paint bounds");
         Check(WheelCell(.5f,.45f,-1,MenuPage::Developer,0,true)==-1,"no hidden center spell behind developer page");
@@ -174,8 +177,13 @@ int main(){
         s.in.hover=DeveloperCell(0);s.in.trigger=1;s.Step();
         Check(s.out.request.action==Action::None,"a stale choice from the previous page cannot grant gear or travel");
         Check(WheelCell(.25f,.82f,-1,MenuPage::Developer,0,true,1)==-1,"space below scenic rows has no hidden action");
-        s.in.wheel=false;s.in.trigger=0;s.Step();s.in.wheel=true;s.Step();s.in.hover=13;s.in.trigger=1;s.Step();
-        Check(s.out.developer&&s.out.devPage==0,"reopening DEV starts on gear and test controls");
+        s.in.wheel=false;s.in.trigger=0;s.Step();s.in.wheel=true;s.in.hover=-1;s.Step();
+        Check(s.out.developer&&s.out.devPage==1,"reopening the wheel: DEV on the page it was left on");
+        s.in.hover=9;s.in.trigger=1;s.Step();s.in.trigger=0;s.Step();s.in.hover=13;s.in.trigger=1;s.Step();
+        Check(s.out.developer&&s.out.devPage==1,"leaving DEV and coming back: its last page");
+        s.in.trigger=0;s.in.cancel=true;s.Step();s.in.cancel=false;s.in.wheel=false;s.Step();s.in.wheel=true;s.Step();
+        s.in.hover=13;s.in.trigger=1;s.Step();
+        Check(s.out.developer&&s.out.devPage==0,"after the engine's cancel, DEV starts on gear and test controls, as before");
     }
     for(int footer=0;footer<5;++footer) {
         Sim s;s.in.snapshot.developer=true;s.in.snapshot.devClass=3;s.in.wheel=true;s.Step(3);
@@ -248,6 +256,25 @@ int main(){
         s.in.grip[dominant]=1;
         Check(s.Step().request.index==1,"second deliberate shoulder press returns to set I");
     }
+    // The tabbed menu on leather (leather_menu.h): the left hand over the left shoulder, a fresh grip.
+    for(int dominant=0;dominant<2;++dominant){
+        Sim s;Config c;c.dominant=dominant;s.e.Configure(c);s.in.leatherReach=true;s.Step(4);
+        s.in.hand[1].p=s.in.head.p+Vec{-.23f,-.2f,.14f};s.Step(10);
+        Check(!s.out.inventory&&!s.out.block,"the left hand behind the shoulder without grip changes nothing");
+        s.in.grip[1]=1;const auto o=s.Step();
+        if(dominant==0){
+            Check(o.inventory&&o.block&&o.request.action==Action::None&&o.feedback==1&&o.feedbackHand==1,
+                  "left grip over the left shoulder opens the tabbed menu with a tick, no weapon swap");
+            for(int i=0;i<12;++i)Check(!s.Step().inventory,"one press opens it once");
+            s.in.grip[1]=0;s.Step(3);s.in.grip[1]=1;Check(s.Step().inventory,"a new press asks again (the menu was not opened)");
+        } else Check(!o.inventory&&o.request.action==Action::Equip,"with Dominant hand = Left the left shoulder stays the weapon swap");
+    }
+    {Sim s;s.Step(4);s.in.hand[1].p=s.in.head.p+Vec{-.23f,-.2f,.14f};s.Step(10);s.in.grip[1]=1;
+     Check(!s.Step().inventory&&!s.out.block,"[interactions] leather_menu=0 leaves the left shoulder alone");}
+    {Sim s;s.in.leatherReach=true;s.Step(4);s.in.hand[0].p=s.in.head.p+Vec{-.23f,-.2f,.14f};s.Step(10);s.in.grip[0]=1;
+     const auto o=s.Step();Check(!o.inventory&&o.request.action==Action::Equip,"the right hand over the left shoulder still swaps weapons");}
+    {Sim s;s.in.leatherReach=true;s.Step(4);s.in.hand[1].p=s.in.head.p+Vec{-.23f,-.2f,.14f};s.in.wheel=true;s.in.wheelHand=0;s.Step(10);
+     s.in.grip[1]=1;Check(!s.Step().inventory,"an open wheel keeps the left grip");}
     {Sim s;s.in.hand[0]=s.out.holster[1];s.in.grip[0]=1;s.Step();s.in.hand[0].p.z-=.2f;
      Check(s.Step().request.action==Action::None,"hip pulls are disabled in the default controls");}
     {
@@ -593,7 +620,74 @@ int main(){
         s.Step();Check(!s.out.map&&!MapWanted(s.in,s.out,s.in.at)&&s.out.block&&s.out.select==-2&&s.out.request.action==Action::None,
             "closing, cancellation, tracking loss, native menu, session change and recenter cancel map and block held trigger");
         s.in.wheel=false;s.in.cancel=false;s.in.active=true;s.in.tracked[0]=true;s.in.trigger=0;s.Step(3);
-        s.in.wheel=true;s.Step();Check(s.out.wheel&&!s.out.map&&s.e.Page()==MenuPage::Spells,"reopening after interruption starts on spells");
+        // Menus remember the last page: the engine's cancel (unused by the game since the per-hand wheels) and a
+        // new game start over on Spells; a plain close, tracking loss, a native menu or a recenter keep the map
+        // for the next open (the map itself is still canceled above).
+        const bool startsOver=interruption==1||interruption==4;
+        s.in.wheel=true;s.Step();
+        Check(s.out.wheel&&s.out.map==!startsOver&&s.e.Page()==(startsOver?MenuPage::Spells:MenuPage::Map),
+              "reopening after the engine's cancel or a new game starts on spells; after any other interruption, on the map it was left on");
+    }
+    // Menus remember (2026-10-26): the transport sends wheelHand -1 while a wheel is closed, so every
+    // close here does too. reopen(s,hand) closes, then opens that hand's wheel.
+    auto press=[](Sim& s,int cell){s.in.hover=cell;s.in.trigger=1;s.Step();s.in.trigger=0;s.in.hover=-1;s.Step();};
+    auto reopen=[](Sim& s,int hand){s.in.wheel=false;s.in.wheelHand=-1;s.in.trigger=0;s.Step(3);s.in.wheelHand=hand;s.in.wheel=true;s.in.hover=-1;s.Step();};
+    auto join=[](Sim& s,uint64_t session){s.in.wheel=false;s.in.wheelHand=-1;s.in.session=s.in.snapshot.session=session;s.Step(3);};
+    {   // each hand's page across a plain close (hand -1 while closed); never an editor
+        Sim s;s.in.wheelHand=1;s.in.wheel=true;s.Step();press(s,12);Check(s.e.Page()==MenuPage::Map,"map open");
+        reopen(s,1);Check(s.out.wheel&&s.out.map&&s.e.Page()==MenuPage::Map&&s.out.select==-2&&s.out.request.action==Action::None,
+                          "a plain close (hand -1 while closed) keeps Map; reopening on it selects nothing");
+        press(s,9);reopen(s,1);Check(s.e.Page()==MenuPage::Spells,"SPELLS from the map, then closed: Spells");
+        press(s,9);reopen(s,1);Check(s.e.Page()==MenuPage::Equipment,"Equipment kept");
+        press(s,12);reopen(s,0);Check(!s.out.map&&s.e.Page()==MenuPage::Spells,"the other hand shows its own page (Spells, never opened)");
+        press(s,9);reopen(s,1);Check(s.out.map&&s.e.Page()==MenuPage::Map,"back on the first hand: its own Map");
+        reopen(s,0);Check(s.e.Page()==MenuPage::Equipment,"and the other hand its own Equipment");
+    }
+    {   // a direct switch: the other stick clicked while a wheel is open (no closed frame between)
+        Sim s;s.in.wheelHand=0;s.in.wheel=true;s.Step();press(s,12);Check(s.e.Page()==MenuPage::Map,"right wheel on Map");
+        s.in.wheelHand=1;s.Step();Check(s.out.wheel&&s.e.Page()==MenuPage::Spells,"switched straight to the left wheel: its own Spells");
+        s.in.wheelHand=0;s.Step();Check(s.out.wheel&&s.out.map&&s.e.Page()==MenuPage::Map,"switched straight back: the right wheel's Map");
+    }
+    {   // the combined wheel (wheelHand -1 while open, tests only): an editor is never reopened
+        Sim s;s.in.wheel=true;s.Step();press(s,11);Check(s.e.Page()==MenuPage::EditSlots,"the skill editor open");
+        reopen(s,-1);Check(s.e.Page()!=MenuPage::EditSlots&&s.out.editor==0,"an editor is never reopened");
+    }
+    {   // only a new game (a new non-zero session) starts the menus over; a 0 or a blip back does not
+        Sim s;s.in.wheelHand=1;s.in.wheel=true;s.Step();press(s,12);
+        join(s,0);reopen(s,1);Check(s.out.map,"character select (session 0) keeps the map");
+        join(s,0);join(s,10);reopen(s,1);Check(s.out.map,"a loading blip (0, then the same session) keeps the map");
+        reopen(s,0);press(s,9);
+        join(s,0);join(s,11);reopen(s,1);Check(!s.out.map&&s.e.Page()==MenuPage::Spells,"a new game: the map is not kept");
+        reopen(s,0);Check(s.e.Page()==MenuPage::Spells,"a new game: the other hand starts over too");
+    }
+    {   // each hand keeps its own Developer page
+        Sim s;s.in.snapshot.developer=true;s.in.snapshot.devClass=3;s.in.wheelHand=1;s.in.wheel=true;s.Step(3);
+        press(s,13);press(s,DeveloperPageCell(1));Check(s.out.devPage==1,"DEV on page 2");
+        reopen(s,0);Check(!s.out.developer,"the other hand's wheel opens on its own Spells");
+        press(s,13);Check(s.out.developer&&s.out.devPage==0,"and its DEV starts on page 1");
+        reopen(s,1);Check(s.out.developer&&s.out.devPage==1,"the first hand: DEV page 2 again");
+    }
+    {   // the skill editor reopens on the tree picked in this game (all on page 1); an empty tree falls back to All
+        Sim s;s.in.snapshot.bindingsEditable=true;s.in.snapshot.bindingBank=0;s.in.snapshot.skillClass=1;s.in.snapshot.skillCount=10;
+        for(int i=0;i<8;++i)s.in.snapshot.skills[i].known=true;
+        for(int i=0;i<10;++i){auto& skill=s.in.snapshot.catalog[i];skill.id=36+i;skill.available=skill.known=true;}   // Sorceress 36-45: Cold at 39, 40, 44, 45
+        const int cold[4]={3,4,8,9};
+        s.in.wheelHand=1;s.in.wheel=true;s.Step();
+        press(s,0);Check(s.out.editor==2&&s.out.editCategory==framevr::skillcategories::All,"first open: All");
+        s.in.hover=SkillCategoryCell(3);s.in.trigger=1;s.Step();
+        Check(s.out.treePicked&&s.out.editCategory==3&&s.out.wheelHand==1,"a tree click reports the pick (for its log line), with its hand");
+        s.Step();Check(!s.out.treePicked,"the pick is reported once, not while the trigger is held");
+        s.in.trigger=0;s.in.hover=-1;s.Step();Check(s.out.editCategory==3&&s.out.editCount==4&&!s.out.treePicked,"Cold picked");
+        reopen(s,1);Check(s.out.editor==0,"a close closes the editor");
+        press(s,0);Check(s.out.editor==2&&s.out.editCategory==3&&s.out.editPage==0&&s.out.editCount==4,"reopened: Cold kept, page 1");
+        Check(s.e.TreeFilter()==3,"the open line can name it");
+        reopen(s,0);press(s,0);Check(s.out.editCategory==framevr::skillcategories::All,"the other hand keeps its own filter (All)");
+        reopen(s,1);for(int i:cold)s.in.snapshot.catalog[i].id=36;   // no Cold skills now
+        press(s,0);Check(s.out.editor==2&&s.out.editCategory==framevr::skillcategories::All,"an empty tree falls back to All");
+        for(int i:cold)s.in.snapshot.catalog[i].id=36+i;
+        reopen(s,1);press(s,0);Check(s.out.editCategory==3,"the kept tree comes back when it has skills again");
+        reopen(s,1);s.in.snapshot.skillClass=4;press(s,0);Check(s.out.editCategory==framevr::skillcategories::All,"another class: All (safety check)");
+        s.in.snapshot.skillClass=1;join(s,12);reopen(s,1);press(s,0);Check(s.out.editCategory==framevr::skillcategories::All,"a new game: All");
     }
     for(int i=0;i<8;++i){float a=i*Pi/4+.012f;
         Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f,(i+7)%8)==(i+7)%8,"segment boundary has selection hysteresis");}

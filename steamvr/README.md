@@ -129,7 +129,7 @@ a third scene for the monitor. Desktop presentation still has overhead;
 suppressing it safely is an open performance task. Do not minimize the game as
 a workaround: background/focus handling also affects input and frame pacing.
 
-VR Settings > Perf > **Stereo rendering** chooses how the two eyes of each
+VR Settings > Performance > **Eyes drawn per frame** (Both or One by turns) chooses how the two eyes of each
 headset frame are drawn:
 
 - **Both eyes** draws the left eye, then the right with the game time held.
@@ -200,6 +200,23 @@ headset frame are drawn:
   developer mode also DEV > Equipment > By turns ghosts; 0 as before). The
   ends are looked for up to 128 px of a 4096-wide eye either side. On an RTX
   5090 it adds 0.1 ms at 3072 square and 0.23 ms at 4096.
+  The game's picture of anything against the sky (the void, depth 0) is
+  larger than its depth: the pixel beside a roof, a treetop or a far
+  building is dark like it and the next one half so, its colour blended into
+  the void's black, which the sky is not painted over. With the sky's depth
+  that rim stayed where the drawn eye saw it while the thing moved across by
+  the eyes' parallax, about 7 px for a roof 10 m off: a dark, ragged outline
+  beside every silhouette against the sky in every other frame of each eye.
+  Captures in Kurast Docks showed it on all sides; against anything with
+  depth the picture keeps to its depth. Within 2 px of something, a pixel of
+  the sky now takes the nearest depth there in both eyes' depth before they
+  move, so the rim goes with what it belongs to (`[stereo] turns_rims=1`,
+  live; in developer mode also DEV > Character > By turns rims; 0 as
+  before). The sky shader also paints the sky over that rim itself, in both
+  stereo modes: a pixel with no depth beside at most two drawn ones (an
+  edge, not a hole in far ground) that is dim gets the sky; a light one (a
+  glow's edge) is laid over it (`[sky] cover_rims=1`, live; DEV > Character
+  > Sky over rims; 0 keeps the rim).
 
 By turns draws a pair on a snap turn, outside first person, in open menus,
 during stereo captures and on any frame without a reusable image for both eyes.
@@ -218,15 +235,15 @@ installer sets it for new installs, and an upgrade keeps the existing value.
 With the conservative wait each frame takes the CPU's time plus the GPU's,
 and at 90 Hz SteamVR then paces the game at half (By turns at 3128 square:
 43-46 frames/s, against 86-88 with the wait deferred). While the wait is not
-deferred, the Perf page shows a warning and a **Defer GPU wait** button that
+deferred, the Performance page shows a warning and a **Defer GPU wait** button that
 turns it on (Apply saves it; it applies live), and the console says so once.
-The Perf page also warns while the game's Vertical Sync is on or its
+The Performance page also warns while the game's Vertical Sync is on or its
 anti-aliasing is anything but FXAA (the game's Options > Video). It reads the
 mod's own game settings, `Saved Games\Diablo II Resurrected\mods\<mod>\Settings.json`,
 which the game keeps apart from the unmodded game's
 `Saved Games\Diablo II Resurrected\Settings.json`.
 
-The Perf page holds every setting that changes the frame rate, and under them
+The Performance page holds every setting that changes the frame rate, and under them
 the last second's frames as the render thread measured them: frames per
 second, the game's drawing (one eye by turns, both with Both eyes), its update,
 the mod's own work and the wait for the headset. It says whether the CPU's part
@@ -235,7 +252,7 @@ refresh. Drawing grows with what is in view, the draw distances and the game's
 shadows, and hardly with resolution. The game's own graphics options are shown
 as it last saved them; change those in its Options > Video.
 
-VR Settings > Perf > **Frame generation** (experimental, Off by default) runs
+VR Settings > Performance > **Frame generation** (experimental, Off by default) runs
 [OFXR Bridge](https://github.com/tig3rmast3r/OFXR-Bridge) by tig3rmast3r
 (LGPL-3.0-or-later), an OpenXR API layer that adds a frame made by optical flow
 between two the game draws. On native Windows, Setup downloads its pinned
@@ -247,27 +264,44 @@ nothing is registered: while the setting is on, the mod adds that folder to
 `xrCreateInstance` (`steamvr/frame_generation.h`). Turning it on or off takes a
 restart; Off while it is loaded asks it to step aside at once. FidelityFX runs
 on any graphics card; NVIDIA uses the optical flow hardware of RTX and GTX 1660
-cards, with its quality (Slow, Medium, Fast) and scale (100%, 75%, 50%) on a
-row under it, sent to the loaded layer live through its control API. The Perf
-page's last line and the log say whether it is off, waiting for a restart,
-active, bypassed or failed. While it runs it doubles the frame time the game
+cards, with its quality (Slow, Medium, Fast) and scale (100%, 75%, 50%) as
+**NVIDIA flow quality** and **NVIDIA flow scale** on the **More** page while NVIDIA is
+chosen (Performance shows 8 rows), sent to the loaded layer live through its
+control API. The Frame generation row ("Now: active") and its help card, and the log,
+say whether it is off, waiting for a restart, active, bypassed or failed. While it runs it doubles the frame time the game
 is given, so the game draws every other headset frame (45 of 90) and the
 bridge makes the rest: Both eyes then shows each eye half its frames for real,
 By turns only a quarter (22 a second, where By turns alone ran 83-89 frames on
 the owner's PC). So it runs with Both eyes only: by turns the loaded bridge is
-asked to step aside, and Both eyes brings it back, both live; the Perf line
-says it is paused. VR Settings turns it on only with Both eyes (once on, it
-can still be changed or turned off). The bridge takes over every color swapchain whose images are listed
+asked to step aside, and Both eyes brings it back, both live. VR Settings
+shows its rows and the Performance page's line about it with Both eyes only: chosen
+By turns, they go at once, before Apply. The bridge takes over every color swapchain whose images are listed
 through it (three more swapchains and an optical flow pipeline each); with the
 mod's panels SteamVR ran out of swapchains, and menus fell back to the flat
 panel. While it is loaded the mod lists the panels' images through the
 runtime's own `xrEnumerateSwapchainImages`, below the bridge, so it takes over
-the two eyes only; the log says so, or why not. If the loader does not list the layer (a game run
+the two eyes only; the log says so, or why not. The hand's map surface is
+made the first time a map shows; with the bridge loaded that failed in every
+session it was tried, and one failure left the minimap off for the session.
+It now uses the UI panel's swapchain usage, lists its images through the
+bridge should the list below it refuse them, logs which step failed with the
+result (`Frame menu map:`), and tries again 5 s later, three times a session.
+SteamVR gives a session 16 swapchains, and the bridge takes three more for
+each eye's, which leaves the panels about eight: with the map's surface made,
+VR Settings' atlas was refused (`XR_ERROR_LIMIT_REACHED`) and the panel never
+showed. Once that happens in a session, VR Settings takes the map's surface
+when it needs the room, the map waits while VR Settings is open, and closing
+it gives its atlas back so the map returns; a map refused for room waits and
+tries again every 5 s rather than counting it a failure.
+If the loader does not list the layer (a game run
 as administrator ignores `XR_API_LAYER_PATH`) or the instance fails with it,
 the game starts without it; Proton's WineOpenXR has no API layers. The
 generated frames come from color alone, so moving things and head turns can
-show artifacts, and the Perf page's frame rate counts the frames the game
-draws, not the generated ones. The layer needs the Microsoft Visual C++ x64
+show artifacts. While frame generation is active the Perf page shows no frame
+rate: with a menu open the bridge stops generating (Both eyes ran 30 pairs a
+second at 90 Hz with VR Settings up, 45 at 45 Hz doubled in play), so its
+numbers would be the menu's. It points to fpsVR or SteamVR's performance graph
+instead. The layer needs the Microsoft Visual C++ x64
 runtime. Its settings are `[render] frame_generation` (0 Off, 1 FidelityFX,
 2 NVIDIA), `frame_generation_preset` (0 Slow, 1 Medium, 2 Fast) and
 `frame_generation_scale` (0 100%, 1 75%, 2 50%).
@@ -309,7 +343,7 @@ Hold **left grip**, then **click the left stick** to open or close the native
 inventory/character/skills menu. This works even when the runtime reserves the
 controller's menu button. A plain stick click still toggles that hand's wheel
 with motion controls enabled. Release the stick before another menu toggle.
-Reset eye height using **VR Settings > Reset eye height**. F11 also resets height
+Reset eye height using **VR Settings > Body > Height and arm span > Set eye height**. F11 also resets height
 as part of its full camera recenter, including horizontal position and facing.
 
 Each saved-game load calibrates from the current headset position at the first
@@ -352,7 +386,7 @@ reduced and foveation had no visible or GPU effect. Unsupported devices/command
 lists fall back to full quality. Immutable masks are uploaded once per viewport;
 routine draws do not upload or wait for them.
 
-VR Settings > Perf > **Foveation strength** (available when foveated rendering
+VR Settings > Performance > **Edge detail reduction** (available when **Lower detail at edges**
 is Fixed or Eye tracked) chooses how much detail is reduced:
 
 | Strength | Fixed protected radius | Gaze protected radius | Periphery |
@@ -458,6 +492,20 @@ F8 saves one complete gameplay pair through ReShade, with matching
 performance measurements. For remote debugging, increment `[debug] capture_pair`
 in the installed INI, or set/increment `capture_labels` to wait for a visible
 unit label before capturing. Normal play performs no readback or screenshot IO.
+
+With Stereo rendering By turns, the same request also records the next 4 frames
+by turns after that pair, into `d2rloader\logs\turn-captures\<time>` beside the
+frame log (a folder a game, named by its first capture, as N starts again at 1
+each game): for each frame `Frame-turns-N-F-<eye>-drawn.png` and `-turned.png` (both
+eyes as they go to the headset), `-kept.png` (the drawn eye's picture as the
+warp read it, before the interface), `-depth.bin` (its depth: float32,
+width x height, reverse-Z) and `Frame-turns-N-F.txt` (poses, FOVs and the
+warp's parameters, to replay the frame). Each frame waits for the GPU; at
+3072x3072 a capture's files take a few hundred MB. A `Frame capture: by turns`
+line logs each frame and then the files written. `turn-replay` (a development
+build's tool) runs one captured frame through the warp again offline, with
+`turns_rims`, `turns_fill` and `turns_sharp` either way: its comment says how
+to feed it.
 
 The current Proton installer supplies the Microsoft SDK shader compiler privately
 under `d2rloader/runtime`. ReShade had remained compiling throughout tests using
@@ -656,6 +704,32 @@ lighting. Higher refresh rates, transport lock splitting/dedicated frame calls,
 eye texture shape, and shared inter-eye skeleton/shadow work remain separate
 experiments. They are not included in the small-fix build.
 
+`[render] bone_armor_height` (game units, about 5.25 per metre; default 0.3,
+just above the floor) sets the Necromancer Bone Armor orbit's centre above the
+unit. The native effect places it 3 units up (waist height in VR) by one local
+point; 0 is the floor and 3 keeps it native. Other overlays and every other
+particle position stay native.
+
+`[render] bone_armor_graft=1` (default) grafts your own Bone Armor onto both
+forearms: three of the game's own bones (cached by the installer from
+`bonearmor_lod0.model`) lie along the back of each forearm, placed from the
+controller's current pose with the drawn arm's shape, and your floor orbit is
+hidden. One piece comes off each arm, thrown out and falling, each time the
+absorb pool falls below a third, as the native orbit loses a layer; a recast
+puts them back. Each piece runs from wrist to elbow; the left arm mirrors the
+right, so both carry the same bones in the same places. Tune by eye:
+`bone_armor_graft_size` (x the forearm's length, default 1),
+`bone_armor_graft_width` (thickness x the length, 0.5), `bone_armor_graft_out`
+(metres from the arm's axis, 0.05), `bone_armor_graft_spread` (degrees between
+pieces, 40) and `bone_armor_graft_along` (where a piece's middle sits, 0 the
+wrist .. 1 the elbow, 0.5). 0 keeps the floor
+orbit. Other units' Bone Armor is unchanged. The pieces sit on the back of the
+forearm; drawn over the game, they hide behind their own forearm (a capsule from
+wrist to elbow, 0.8 x `bone_armor_graft_out` thick) as the arm turns. With the
+grafts on, your own spinning orbit is never shown, in any view or menu: it goes
+under the floor by its centre. Third person and overhead views therefore show no
+Bone Armor on you at all.
+
 `[render] symmetric_projection=1` is the default lighting compatibility
 setting. D2R's native light-bin shader assumes a centered projection;
 the headset can recommend offset frusta. This mode renders a centered FOV that
@@ -668,7 +742,7 @@ Set 0 to restore runtime-recommended projections. See the
 [OpenXR projection-view contract](https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrCompositionLayerProjectionView.html).
 
 `[render] defer_gpu_wait=1` is set by the installer; a missing key means 0, and
-VR Settings > Perf offers it while it is off (see Stereo rendering above). Image
+VR Settings > Performance offers it while it is off (see Eyes drawn per frame above). Image
 copies and state restoration are submitted on the D3D12 queue bound to OpenXR;
 completion is checked before each eye's copy allocator is reused and before
 shutdown, instead of blocking the CPU before every image release. Set it to 0

@@ -37,6 +37,8 @@
 #include "target_lock.h"
 #include "journal_ui.h"
 #include "../steamvr/native_panels.h"
+#include "../steamvr/leather_menu.h"
+#include "../steamvr/stats_button.h"
 #include "../steamvr/notice_card.h"
 #include "../steamvr/weapon_skills.h"
 #include "../steamvr/callback_ticket.h"
@@ -49,6 +51,8 @@
 #include "logging.h"
 #include "panel_input.h"
 #include "render_resolution.h"
+#include "active_effects.h"
+#include "settings_menu.h"
 #include "sigscan.h"
 #include "memory.h"
 #endif
@@ -58,6 +62,7 @@ using namespace D2RL;
 namespace gamestate {
 void __cdecl FinishMenuOpen(const PluginContext*,void*) noexcept;
 void __cdecl DispatchAutoMap(const PluginContext*,void*) noexcept;
+uint64_t LocalPlayer();
 namespace {
 
 const PluginContext* g_ctx = nullptr;
@@ -115,8 +120,10 @@ void Install() {
     const bool b=a&&d2rsig::Hook(ScaleRva,scaleEntry,sizeof scaleEntry,reinterpret_cast<void*>(&OnScale),reinterpret_cast<void**>(&originalScale));
     ready.store(a&&b);
     char line[220];
+    // patterns (game_sigs.h MapPanelDraw / AutomapScale): an address 0 = not found in this build
+    const bool foundA=d2rsig::Addr(PanelMethodRva)!=0,foundB=d2rsig::Addr(ScaleRva)!=0;
     std::snprintf(line,sizeof line,"Frame full map: zoom hooks %s (map panel 0x14E3480 %s, scale 0xD1940 %s); %s",a&&b?"installed":"NOT installed",
-                  a?"ok":"bytes differ",b?"ok":a?"bytes differ":"not tried",a&&b?"the wrist's full map opens at game zoom 0.125":"the wrist shows the full map at the game's own zoom");
+                  a?"ok":foundA?"bytes differ":"not found",b?"ok":!a?"not tried":foundB?"bytes differ":"not found",a&&b?"the wrist's full map opens at game zoom 0.125":"the wrist shows the full map at the game's own zoom");
     framevr::logging::Write(line);
 }
 }
@@ -131,8 +138,11 @@ void MaintainMapLayout(bool capture) {
     static framevr::wrist::MapLayoutLease layout;
     if(!checked){if(!d2rsig::Check(modeRva,modeSig,sizeof modeSig))return;checked=true;}
     int small=0;uint8_t left=0;
-    if(!framevr::ReadMemory(&small,reinterpret_cast<void*>(d2rsig::Addr(0x2a2add0)),sizeof small)||
-       !framevr::ReadMemory(&left,reinterpret_cast<void*>(d2rsig::Addr(0x2a2add5)),sizeof left)||small<0||small>1){
+    // the small flag found by pattern (game_sigs.h AutomapSmall; 0 when not found: the read fails);
+    // the left flag is the byte 5 past it (the setter writes both)
+    const uintptr_t smallAt=d2rsig::Addr(0x2a2add0);
+    if(!smallAt||!framevr::ReadMemory(&small,reinterpret_cast<void*>(smallAt),sizeof small)||
+       !framevr::ReadMemory(&left,reinterpret_cast<void*>(smallAt+5),sizeof left)||small<0||small>1){
         framevr::fullmap::g_layout.store(-1);return;
     }
     // Map view = Full map: the wrist borrows the full map (0) instead of the left corner (1)
@@ -193,12 +203,81 @@ void MaintainNotice(const PluginContext* ctx) {
     });
     if(!previous&&g_noticeVisibility.hidden)framevr::logging::Write("Frame notices: native NotificationPanel hidden; its message goes to the room card");
 }
+// The aura icon at the top left (native_hud.h AuraIconHider): active auras
+// show on the wrist, so it is hidden in every VR session, menus included,
+// while VR Settings > Wrist > Buffs and companions is On.
+framevr::nativehud::AuraIconHider g_auraIcon;
+framevr::nativehud::AuraIconLog g_auraLog;
+void AuraLine(const char* line){if(g_auraLog.Allow())framevr::logging::Write(line);}   // detail lines, capped
+// HUD > Companions & effects, re-read at most every 250 ms (an Apply takes
+// effect within that); UI steps in between take no settings lock.
+bool WristEffectsOn(uint64_t now) {
+    static uint64_t readAt=0;static bool on=true;
+    if(!readAt||now-readAt>250){readAt=now;on=vrsettings::Read().values[framevr::settings::CompanionCounts]>.5f;}
+    return on;
+}
+void MaintainAuraIcon(const PluginContext* ctx) {
+    namespace nh=framevr::nativehud;
+    using Act=nh::AuraIconHider::Act;
+    static int toldFound=-1,toldHidden=-1,toldEffects=-1;static unsigned toldFailure=0;static bool toldWait=false,toldReentry=false,wasSession=false;
+    const bool session=hud::NativeToolbarHidden();
+    if(!session&&!g_auraIcon.Hidden()){wasSession=false;return;}   // the flat screen: nothing of ours to undo
+    if(g_auraIcon.busy) {                       // a message raised by our own call: never loop
+        if(!toldReentry){toldReentry=true;AuraLine("Frame aura icon: re-entered from inside our own visibility call; skipped");}
+        return;
+    }
+    if(session&&!wasSession){g_auraLog.Restart();toldFound=-1;toldEffects=-1;}   // a new VR session: fresh detail lines
+    wasSession=session;
+    const auto now=GetTickCount64();
+    const bool effects=session&&WristEffectsOn(now);
+    const bool want=nh::AuraIconHider::Want(session,effects);
+    if(session&&int(effects)!=toldEffects) {    // on change, outside the cap
+        toldEffects=effects;
+        if(effects)framevr::logging::Write("Frame aura icon: wrist effects on, hiding");
+        else if(!g_auraIcon.Hidden())framevr::logging::Write("Frame aura icon: wrist effects off, released: not hidden by us, left to the game");
+        // else the release line below, prefixed "wrist effects off, "
+    }
+    if(!want&&!g_auraIcon.Hidden())return;     // wrist effects Off: nothing of ours to undo
+    Widgets::WidgetHandle panel=0;
+    const bool found=g_widgets->findPanel(ctx,nh::AuraPanel,&panel)==Widgets::Result::Success&&panel;
+    if(int(found)!=toldFound) {
+        toldFound=found;
+        AuraLine(found?"Frame aura icon: found=1":"Frame aura icon: found=0");
+    }
+    // On release only: does the local player run an aura now (effectstate's last sample)?
+    const int aura=want?0:effectstate::AuraState(LocalPlayer());
+    auto result=Widgets::Result::Success;bool asked=false,visible=false;
+    const Act act=g_auraIcon.Step(want,found,aura,now,[&](bool show){
+        asked=true;visible=show;result=g_widgets->setWidgetVisible(ctx,panel,show);return result==Widgets::Result::Success;
+    });
+    if(asked&&result!=Widgets::Result::Success&&unsigned(result)!=toldFailure) {
+        toldFailure=unsigned(result);
+        char line[120];std::snprintf(line,sizeof line,"Frame aura icon: setWidgetVisible(%s) refused (result %u), retrying",visible?"true":"false",unsigned(result));
+        AuraLine(line);
+    }
+    if(asked&&result==Widgets::Result::Success)toldFailure=0;
+    if(act==Act::Wait&&!toldWait){toldWait=true;AuraLine("Frame aura icon: release waits for an aura sample");}
+    if(act!=Act::Wait)toldWait=false;
+    // The release's branch, outside the cap; in VR it was the wrist effects row turned Off.
+    const char* why=session?"wrist effects off, ":"";
+    char line[160];line[0]=0;
+    if(act==Act::Show)std::snprintf(line,sizeof line,"Frame aura icon: %sreleased, an aura runs: PaladinAuraPanel shown",why);
+    else if(act==Act::Leave)std::snprintf(line,sizeof line,"Frame aura icon: %sreleased, no aura runs: left hidden for the game to show",why);
+    else if(act==Act::LeaveUnknown)std::snprintf(line,sizeof line,"Frame aura icon: %sreleased, no aura sample for 2 s: left hidden for the game to show",why);
+    if(line[0])framevr::logging::Write(line);
+    if(int(g_auraIcon.Hidden())!=toldHidden) {
+        toldHidden=g_auraIcon.Hidden();
+        if(toldHidden)AuraLine("Frame aura icon: PaladinAuraPanel hidden");
+        else if(!found)AuraLine("Frame aura icon: PaladinAuraPanel unloaded; a new one starts shown");
+    }
+}
 // UI-thread-only refreshes; native menu handlers may rebuild/show HUDPanel.
 framevr::CallbackTicket g_toolbarTicket;
 bool g_toolbarUpdating=false;
 void MaintainToolbar(const PluginContext* ctx) {
     if(g_toolbarUpdating||!g_widgets||!g_widgets->findPanel||!g_widgets->setWidgetVisible)return;
     MaintainNotice(ctx);
+    MaintainAuraIcon(ctx);
     const bool hide=hud::NativeToolbarHidden()&&ProtectToolbarUpdate();
     if(!hide&&!g_toolbarVisibility.hidden)return;
     g_toolbarUpdating=true;
@@ -230,6 +309,11 @@ void RefreshToolbarAfterMessage(const PluginContext* ctx) {
 #endif
 std::atomic<int> g_autoMap{0};
 std::atomic<uint64_t> g_menuMapAt{0};
+// The map on the leather (owner 2026-10-29: the HUD on the hide): the map lease may open the
+// game's map under the tabbed menu while this is set (transport, each frame). Should the game
+// close the tabbed menu as its map opens under it, the map stays off under menus from then on.
+std::atomic<bool> g_mapUnderMenu{false},g_mapUnderMenuBroken{false};
+std::atomic<uint64_t> g_mapUnderMenuOpenedAt{0};
 framevr::wrist::MapLease g_menuMapLease;
 const InventoryService* g_inventory = nullptr;
 const ItemService* g_items = nullptr;
@@ -246,6 +330,13 @@ std::atomic<uint32_t> g_menuEpoch{0};
 std::atomic<bool> g_journalOnly{false};
 std::atomic<bool> g_opaqueMenu{false};
 std::atomic<bool> g_upperBandMenu{false};
+std::atomic<bool> g_leatherMenu{false};
+std::atomic<bool> g_statsButton{false};   // the tabbed menu alone: its Advanced Stats button (stats_button.h)
+// An item on the game's cursor (the laser picked it up in a menu), read with the hands
+// every 200 ms; when it was read (CursorItemHeld wants it recent).
+std::atomic<bool> g_cursorItem{false};
+std::atomic<uint64_t> g_cursorItemAt{0};
+std::atomic<uint32_t> g_panelChanges{0};   // every panel opened or closed (leather::Back)
 std::atomic<bool> g_npcChoices{false};
 std::atomic<uint32_t> g_questNotices{0};   // quest updates while the notification panel is hidden
 std::atomic<bool> g_noticePanel{false};     // the native NotificationPanel is open (hidden or not)
@@ -255,6 +346,7 @@ uint64_t noticeTextsAt=0;   // UI thread only
 std::mutex npcChoicesMutex;
 int32_t npcChoicesRect[4]{};
 uint64_t npcChoicesAt=0;
+std::atomic<uint32_t> g_talkOpens{0};   // NPC conversations opened (vrcam stops the hero, talk_stop.h)
 uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
 std::mutex journalMutex;
 int32_t journalRect[4]{};
@@ -599,15 +691,28 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     PlayerHandle player = InvalidPlayerHandle;
     const bool havePlayer = g_inventory && g_inventory->getLocalPlayer(ctx, &player) == Inventory::Result::Success && player != InvalidPlayerHandle;
     g_player.store(havePlayer ? player : 0);
+    {   // the item on the cursor, for a drop outside the menu (transport MenuPointer)
+        ItemHandle onCursor=InvalidItemHandle;
+        g_cursorItem.store(havePlayer&&g_inventory&&g_inventory->getCursorItem&&
+            g_inventory->getCursorItem(ctx,player,&onCursor)==Inventory::Result::Success&&onCursor!=InvalidItemHandle);
+        g_cursorItemAt.store(GetTickCount64());
+    }
 #ifdef D2RVR_NATIVE_OPENXR
     panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
     MaintainToolbar(ctx);
     ReadNoticeTexts();
     const auto now=GetTickCount64(),mapAt=g_menuMapAt.load();
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
-    const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
+    // A menu stops the map, but for the map on the leather (g_mapUnderMenu).
+    const bool underMenu=g_menu.load()!=0&&g_mapUnderMenu.load()&&!g_mapUnderMenuBroken.load();
+    const bool menuBlocks=g_menu.load()!=0&&!underMenu;
+    const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,menuBlocks,g_autoMap.load()!=0);
+    if(mapAction==1&&underMenu) {
+        g_mapUnderMenuOpenedAt.store(now);
+        static int told=0;if(told<5){++told;Log("gamestate: the leather's map - opening the game's map under the tabbed menu");}
+    }
     // Keep native widget calls on this UI callback, never on the XR thread.
-    const bool capture=g_menuMapLease.Active(now,g_menu.load()!=0);
+    const bool capture=g_menuMapLease.Active(now,menuBlocks);
     MaintainMapLayout(capture);
     if(mapAction>=0)DispatchAutoMap(ctx,mapAction?(void*)1:nullptr);
     hud::MenuMapCapture(capture);
@@ -777,6 +882,7 @@ bool Has(const char* s, const char* part) {
     return false;
 }
 
+void TellSheetRects(const char* opened);   // below
 SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, const SharedEvents::UiMessageEvent* e, void*) noexcept {
     if (!e) return SharedEvents::UiMessageAction::Continue;
     const char* target = e->target ? e->target : "";
@@ -793,8 +899,17 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
     if (strcmp(target, "PanelManager") == 0) {
         const bool before = g_menu.load() != 0;
         if (!strcmp(command, "OpenPanel") || !strcmp(command, "OpenExclusivePanel")) { if (*text) g_panels.insert(text); }
-        else if (!strcmp(command, "ClosePanel") || !strcmp(command, "UnloadPanel")) g_panels.erase(text);
+        else if (!strcmp(command, "ClosePanel") || !strcmp(command, "UnloadPanel")) {
+            g_panels.erase(text);
+            // The tabbed menu closed just as the leather's map opened under it: the game will not
+            // have its map under the menu, so the leather shows no map from now on.
+            const uint64_t opened=g_mapUnderMenuOpenedAt.load();
+            if(opened&&!strcmp(text,framevr::panels::TabbedMenu)&&GetTickCount64()-opened<600&&!g_mapUnderMenuBroken.exchange(true))
+                Log("gamestate: the tabbed menu closed as its map opened under it - no map on the leather from now on");
+        }
         else if (!strcmp(command, "UnloadAll") || !strcmp(command, "CloseAll")) g_panels.clear();
+        if (!strcmp(command, "OpenPanel") || !strcmp(command, "OpenExclusivePanel") || !strcmp(command, "ClosePanel") ||
+            !strcmp(command, "UnloadPanel") || !strcmp(command, "UnloadAll") || !strcmp(command, "CloseAll")) g_panelChanges.fetch_add(1);
         g_autoMap.store(g_panels.count("AutoMap") ? 1 : 0);
         framevr::fullmap::g_panel.store(g_panels.count("AutoMap") != 0);
         g_noticePanel.store(g_panels.count("NotificationPanel") != 0);
@@ -802,6 +917,8 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
             [](const auto& name){return framevr::panels::UpperBand(name);}));
         g_opaqueMenu.store(std::any_of(g_panels.begin(),g_panels.end(),
             [](const auto& name){return framevr::panels::OpaqueBackground(name);}));
+        g_leatherMenu.store(framevr::leather::OnSheet(g_panels));
+        g_statsButton.store(framevr::statsbutton::Shown(g_panels));
         bool menu = false;
         for (const std::string& n : g_panels) if (IsMenuPanel(n)) { menu = true; break; }
         if(menu!=before)++g_menuEpoch;
@@ -812,10 +929,14 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         const bool npc=menus==1&&g_panels.count("NpcDialogPanel")!=0;
         if(g_npcChoices.exchange(npc)!=npc){std::lock_guard lock(npcChoicesMutex);npcChoicesAt=0;}
         if(!strcmp(text,"NpcDialogPanel")||!strcmp(text,"ScrollSpeechPanel")) {
+            if(!strcmp(command,"OpenPanel")||!strcmp(command,"OpenExclusivePanel"))g_talkOpens.fetch_add(1);
             char b[200];snprintf(b,sizeof b,"Frame NPC transition: %s %s; choices=%d speech=%d choice_surface=%d modal_roots=%d",
                 command,text,int(g_panels.count("NpcDialogPanel")!=0),int(g_panels.count("ScrollSpeechPanel")!=0),int(npc),menus);Log(b);
         }
         if(g_journalOnly.load())ReadJournalRect();
+#ifdef D2RVR_DEVELOPER   // a diagnostic: developer builds only
+        if(g_leatherMenu.load()&&!strcmp(command,"OpenPanel"))TellSheetRects(text);
+#endif
         if (menu != before) {
             std::string list;
             for (const std::string& n : g_panels) list += n + " ";
@@ -1003,6 +1124,7 @@ bool RestoreLeftDurability(const PluginContext* ctx, int32_t value) {
 }
 uint32_t DataBank() {return uint32_t(g_bank);} // UI-thread-only table bank
 void MenuMap(bool wanted) {g_menuMapAt.store(wanted?GetTickCount64():0);}
+void MenuMapUnderMenu(bool on) {g_mapUnderMenu.store(on);}
 // An object's light in a mode: its radius (Objects.txt Lit, 0 = none) and colour 0..1.
 int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
     if (txt >= g_objCount.load() || mode > 7) return 0;
@@ -1022,6 +1144,11 @@ bool NoticeText(int kind,char* out,uint32_t size) {
 bool JournalOnly(){return g_journalOnly.load();}
 bool OpaqueMenuOpen(){return g_opaqueMenu.load();}
 bool UpperBandMenuOpen(){return g_upperBandMenu.load();}
+bool LeatherMenuOpen(){return g_leatherMenu.load();}
+bool StatsButtonShown(){return g_statsButton.load();}
+bool CursorItemHeld(){return g_cursorItem.load()&&GetTickCount64()-g_cursorItemAt.load()<600;}
+uint64_t CursorItemReadAt(){return g_cursorItemAt.load();}
+uint32_t PanelChanges(){return g_panelChanges.load();}
 bool NpcChoicesOnly(){return g_npcChoices.load();}
 void ReadNpcChoicesRect() {
     if(!g_npcChoices.load()||!g_widgets||!g_widgets->getWidgetRect||!g_widgets->findPanel)return;
@@ -1049,6 +1176,23 @@ bool NpcChoicesRect(int32_t out[4]) {
     if(!g_npcChoices.load()||!npcChoicesAt||GetTickCount64()-npcChoicesAt>650)return false;
     std::copy_n(npcChoicesRect,4,out);return true;
 }
+uint32_t TalkOpens(){return g_talkOpens.load();}
+// Once a session per panel: where the game puts the tabbed menu's widgets (their own
+// units), to compare with what shows on the leather (2026-10-28, a ghost square beside the
+// menu). Widget calls on this UI thread, as OnUiMessage runs.
+namespace {   // the declaration above OnUiMessage is in this file's anonymous namespace
+void TellSheetRects(const char* opened) {
+    static std::set<std::string> told;
+    if(!g_widgets||!g_widgets->findPanel||!g_widgets->getWidgetRect||!opened||!*opened||told.size()>24)return;
+    for(const char* name:{opened,"UISwitcher","ControllerOverlay"}) {
+        if(!told.insert(name).second)continue;
+        Widgets::WidgetHandle panel=0;Widgets::Rect r{};
+        const auto found=g_widgets->findPanel(g_ctx,name,&panel);
+        const auto read=found==Widgets::Result::Success?g_widgets->getWidgetRect(g_ctx,panel,&r):found;
+        char b[200];snprintf(b,sizeof b,"gamestate: leather menu panel '%s' rect %d,%d %dx%d (result %u)",name,r.x,r.y,r.width,r.height,unsigned(read));Log(b);
+    }
+}
+}  // namespace
 void ReadJournalRect() {
     if(!g_journalOnly.load()||!g_widgets)return;
     Widgets::WidgetHandle panel=0;Widgets::Rect r{};
@@ -1107,6 +1251,11 @@ void __cdecl ReadPlate(const PluginContext* ctx, void*) noexcept {
         Log(b);
     }
 }
+// A callback on the game's UI thread (the leather's walk click, vrcam).
+bool RunOnUi(Threads::Callback callback) {
+    return callback && g_ctx && g_threads && g_threads->runOnUiThread &&
+        g_threads->runOnUiThread(g_ctx, callback, nullptr) == Threads::Result::Success;
+}
 void PollPlate() {
     if (g_ctx && g_threads && g_threads->runOnUiThread && g_widgets) g_threads->runOnUiThread(g_ctx, &ReadPlate, nullptr);
 }
@@ -1151,6 +1300,52 @@ void __cdecl DispatchMenuToggle(const PluginContext* ctx,void*) noexcept {
 bool ToggleMenus() {
     return g_ctx&&g_threads&&g_threads->runOnUiThread&&g_widgets&&g_widgets->dispatchUiAction&&
         g_threads->runOnUiThread(g_ctx,&DispatchMenuToggle,nullptr)==Threads::Result::Success;
+}
+// Right B the game left unanswered on the leather (leather::Back): close the
+// tabbed menu as the left menu button does, on this UI thread, if it is still
+// only the menu and its pages (leather::BackCloses) and the cursor holds no item.
+void __cdecl DispatchLeatherClose(const PluginContext* ctx,void*) noexcept {
+    if(!g_widgets||!g_widgets->dispatchUiAction)return;
+    if(!framevr::leather::BackCloses(g_panels)){Log("gamestate: B on the leather - a cube or dialog is open over the menu; left to the game");return;}
+    PlayerHandle player=InvalidPlayerHandle;ItemHandle held=InvalidItemHandle;
+    if(g_inventory&&g_inventory->getCursorItem&&g_inventory->getLocalPlayer(ctx,&player)==Inventory::Result::Success&&
+       player!=InvalidPlayerHandle&&g_inventory->getCursorItem(ctx,player,&held)==Inventory::Result::Success&&held!=InvalidItemHandle) {
+        Log("gamestate: B on the leather - an item is on the cursor; menu left open");return;
+    }
+    Widgets::UiAction action{};action.structSize=sizeof action;
+    action.target="PanelManager";action.text=framevr::panels::TabbedMenu;action.command="ClosePanel";
+    const auto result=g_widgets->dispatchUiAction(ctx,&action);
+    char line[180];snprintf(line,sizeof line,"gamestate: B on the leather went unanswered by the game - ClosePanel UISwitcher (result %u)",unsigned(result));Log(line);
+}
+// The menu put away over the left shoulder (owner 2026-10-29: "put the inventory away behind
+// my back by reaching over left shoulder and pressing grab"): the tabbed menu closed as its
+// own menu button does, with whatever page or dialog it has; a cube opened from it, when the
+// game closed the tabbed menu for the cube, closed itself. Not with an item on the cursor.
+void __cdecl DispatchLeatherStow(const PluginContext* ctx,void*) noexcept {
+    if(!g_widgets||!g_widgets->dispatchUiAction)return;
+    PlayerHandle player=InvalidPlayerHandle;ItemHandle held=InvalidItemHandle;
+    if(g_inventory&&g_inventory->getCursorItem&&g_inventory->getLocalPlayer(ctx,&player)==Inventory::Result::Success&&
+       player!=InvalidPlayerHandle&&g_inventory->getCursorItem(ctx,player,&held)==Inventory::Result::Success&&held!=InvalidItemHandle) {
+        Log("gamestate: menu put away over the shoulder - an item is on the cursor; menu left open");return;
+    }
+    std::vector<std::string> close;
+    if(g_panels.count(framevr::panels::TabbedMenu))close.push_back(framevr::panels::TabbedMenu);
+    else for(const auto& name:g_panels)if(name.starts_with("HoradricCube")||name.starts_with("AdvancedStats"))close.push_back(name);
+    if(close.empty()){Log("gamestate: menu put away over the shoulder - no tabbed menu open");return;}
+    for(const auto& name:close) {
+        Widgets::UiAction action{};action.structSize=sizeof action;
+        action.target="PanelManager";action.text=name.c_str();action.command="ClosePanel";
+        const auto result=g_widgets->dispatchUiAction(ctx,&action);
+        char line[180];snprintf(line,sizeof line,"gamestate: menu put away over the shoulder - ClosePanel %s (result %u)",name.c_str(),unsigned(result));Log(line);
+    }
+}
+bool StowLeatherMenu() {
+    return g_ctx&&g_threads&&g_threads->runOnUiThread&&g_widgets&&g_widgets->dispatchUiAction&&
+        g_threads->runOnUiThread(g_ctx,&DispatchLeatherStow,nullptr)==Threads::Result::Success;
+}
+bool CloseLeatherMenu() {
+    return g_ctx&&g_threads&&g_threads->runOnUiThread&&g_widgets&&g_widgets->dispatchUiAction&&
+        g_threads->runOnUiThread(g_ctx,&DispatchLeatherClose,nullptr)==Threads::Result::Success;
 }
 void SetViewMode(uint32_t mode) { if (g_view.exchange(mode) != mode) Publish(); }
 

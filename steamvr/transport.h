@@ -59,12 +59,29 @@ bool TurnsSharp();
 void ConfigureTurnsFill(bool on);
 void SetTurnsFill(bool on);
 bool TurnsFill();
+// [stereo] turns_rims (1): by turns, the rim the game's picture has round
+// anything against the sky (its colour, the sky's depth) goes with it
+// (TurnWarp::Rims); 0 it stays with the sky as before, a dark outline beside
+// roofs and treetops in every other frame. Applied when the ini's value
+// changes; DEV > Equipment switches it for the session (Set), and reads it back.
+void ConfigureTurnsRims(bool on);
+void SetTurnsRims(bool on);
+bool TurnsRims();
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
 void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
 void ConfigureBottlePhysics(bool on); // [interactions] bottle_physics: emptied bottles fall into the world
 void ConfigurePropPhysics(bool on);   // [interactions] prop_physics: weapons knock the level's small props about
+void ConfigureBodyPhysics(bool on);   // [interactions] body_physics: weapons push monsters' and townsfolk's limbs aside
+bool BodyPhysics();                   // on, with physical melee
+// [interactions] leather_menu (VR Settings > Interface, beside Menu distance), leather_menu_width (m), leather_tilt (degrees),
+// leather_world, leather_backdrop: the tabbed menu on a leather sheet strapped to the left hand
+// (leather_menu.h); backdrop keeps the game's translucent dim under the menu on the hide.
+void ConfigureLeatherMenu(bool on,float menuWidth,float tilt,bool world,bool backdrop=false,bool hide=true);   // hide false: Menu only
+// Any thread: the tabbed menu is on the leather with the world kept round it, so
+// the world's effects (sky, fog, cave ceiling) stay on as for the spatial menus.
+bool LeatherMenuWorld();   // also: the left stick walks while the leather is out (vrcam DirectWalkNow)
 void PublishSewerPrompt(const sewerprompt::Target&); // Values only; XR follows no game pointers.
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
@@ -117,6 +134,11 @@ void ConfigureGuardStrainRecover(float seconds);
 // at the first 10 % step and below 10 % life, wind-down time from full, and an optional
 // one-beat 16-bit PCM WAV (empty: the built-in beat). Reloads the WAV only when the path changes.
 void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file);
+// Bone Armor grafted onto both forearms (bone_graft.h): on/off; piece length (x
+// the forearm, wrist to elbow), metres out from the arm, degrees between pieces,
+// where a piece's middle sits (0 the wrist .. 1 the elbow) and its thickness
+// (x its length). Bad values: the defaults.
+void ConfigureBoneGraft(bool on,float size,float out,float spread,float along,float width);
 // [gameplay] guard_break_volume (x the game's Master x Combat volume, 0 = off) and an
 // optional 16-bit PCM WAV (empty: the built-in bone snap) played once as the guard breaks.
 void ConfigureGuardBreakSound(float volume,const wchar_t* file);
@@ -138,7 +160,7 @@ struct FrameTiming {
     uint32_t pipelines=0,layers=0;bool gpuValid=false;   // layers: composition layers the last xrEndFrame sent
 };
 FrameTiming LastTiming();
-// One headset frame as the render thread measured it, for VR Settings > Perf:
+// One headset frame as the render thread measured it, for VR Settings > Performance:
 // the runtime's wait (xrWaitFrame), the game's drawing (one eye by turns, both
 // in a pair), the mod's own work around it without that wait, and the
 // headset's frame (budgetMs). periodMs is the time since the last frame ended
@@ -151,7 +173,7 @@ void Shutdown(bool preserveResolution=false);
 // its own x, and placed so.
 void BeginPair(bool byTurns=false,bool replay=false);
 void BeginEye(int eye);
-// VR Settings > Perf > Stereo rendering: 0 both eyes, 1 By turns (the eye not
+// VR Settings > Performance > Eyes drawn per frame: 0 both eyes, 1 by turns (the eye not
 // drawn turned and moved with the scene's depth; the default). Replay (2) is
 // no longer a choice (vr_settings.h).
 int StereoRendering();

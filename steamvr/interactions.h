@@ -1,5 +1,6 @@
 #pragma once
 #include "shoulder_swap.h"
+#include "leather_menu.h"
 #include "skill_slots.h"
 #include "skill_categories.h"
 #include "frame_math.h"
@@ -11,6 +12,7 @@
 #include "companions.h"
 #include "active_effects.h"
 #include "torch_light.h"
+#include "map_zoom.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -252,6 +254,9 @@ struct Snapshot {
     int devTurnsKeepOwn=0;   // [stereo] turns_keep_own as it stands (DEV switch): 0 off, 1 near things, 2 everywhere
     bool devTurnsSharp=false;   // [stereo] turns_sharp as it stands (DEV switch)
     bool devTurnsFill=false;    // and turns_fill
+    bool devTurnsRims=false;    // and turns_rims
+    bool devSkyRims=false;      // and [sky] cover_rims
+    std::array<float,limbs::Knobs> devBodies{};   // [bodies] as they stand (DEV > Bodies)
     int devClass=-1,skillClass=-1;
     uint64_t session=0,at=0;
     uint32_t revision=0,activeSet=0;
@@ -265,6 +270,9 @@ struct Snapshot {
     bool bindingsEditable=false;
     float health=0,maxHealth=0,mana=0,maxMana=0;
     bool vitalsKnown=false;
+    // Bone Armor's absorb pool and its maximum (ItemStatCost 132 / 133, 8.8 fixed
+    // point; developer capture 2026-10-26): the forearm grafts (bone_graft.h).
+    int boneArmor=0,boneArmorMax=0;
     wrist::Experience experience;
     navigation::Location location;
     bool actionKnown=false;
@@ -302,7 +310,7 @@ inline bool Fresh(const Snapshot& s,uint64_t session,uint64_t now) {
     return session&&s.session==session&&now>=s.at&&now-s.at<=650;
 }
 enum class Action { None, Potion, Equip, Quest, Map, Character, Skills, BindSkill, Developer, FeedMerc, BindItem, UseItem, RunWalk };
-enum class Result { None, Pending, Applied, Refused, Cancelled, Dispatched, KitRefused, DebugUpdated, TurnsUpdated, SharpUpdated, FillUpdated };
+enum class Result { None, Pending, Applied, Refused, Cancelled, Dispatched, KitRefused, DebugUpdated, TurnsUpdated, SharpUpdated, FillUpdated, RimsUpdated, SkyRimsUpdated, BodiesUpdated };
 struct Request {
     Action action=Action::None;
     uint64_t sequence=0,session=0,at=0;
@@ -345,9 +353,9 @@ struct MenuBounds {
     float left,top,right,bottom;
     bool Contains(float u,float v) const {return u>left&&u<right&&v>top&&v<bottom;}
 };
-constexpr int QuickUseCell=210,RunWalkCell=211,LeftStrikesCell=212;
+constexpr int QuickUseCell=210,LeftStrikesCell=212;   // 211 was RUN / WALK, 213 the movement slider (now VR Settings > Body > Movement speed)
 constexpr double QuickEditHold=.65;
-constexpr MenuBounds QuickUseBounds{.025f,.025f,.255f,.18f},RunWalkBounds{.76f,.025f,.975f,.13f};
+constexpr MenuBounds QuickUseBounds{.025f,.025f,.255f,.18f};
 // Druid: the left claw's strike skill, [gameplay] left_hand_strikes. Lower left,
 // above the ACTIVE line (y 637) and clear of the hand wheel's 216-degree label.
 constexpr MenuBounds LeftStrikesBounds{.025f,.72f,.235f,.82f};
@@ -397,7 +405,6 @@ inline int WheelCell(float u,float v,int previous=-1,MenuPage page=MenuPage::Spe
     for(int i=0;i<FooterCount(page,developer);++i)if(FooterBounds(i,page,developer).Contains(u,v))return FooterCell(i,page);
     if(QuickControls(page)) {
         if(QuickUseBounds.Contains(u,v))return QuickUseCell;
-        if(RunWalkBounds.Contains(u,v))return RunWalkCell;
         if(leftStrikes&&LeftStrikesBounds.Contains(u,v))return LeftStrikesCell;
     }
     if(page==MenuPage::Map)return -1; // no invisible spells behind the map
@@ -446,7 +453,8 @@ struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
-    bool runWalk=false;   // right stick pushed up this step: toggle running / walking
+    bool leatherReach=false; // [interactions] leather_menu: the left hand over the left shoulder opens the tabbed menu (leather_menu.h)
+    bool gaitToggle=false;   // the game's run / walk toggle is the other way than the hero should go (Movement speed's WALK or a run stop, or the stick's switch): send it
     int leftStrikes=-1;   // Druid: [gameplay] left_hand_strikes for the wheel's box (0 own trigger, 1 same as right); -1 hides it
     vitals::Location navigationLocation=vitals::Location::Wrist;
     vitals::Location vitalsLocation=vitals::Location::Wrist;
@@ -477,6 +485,7 @@ struct Output {
     bool inventory=false;
     int leftStrikes=-1;             // the wheel's left-claw box: shown value, -1 hidden
     bool toggleLeftStrikes=false;   // clicked this step: the transport saves the other choice
+    bool treePicked=false;          // a skill tree picked in the skill editor this step (editCategory): logged
     int select=-2,bottle=-1,bottleHand=-1,nearBelt=-1,nearHolster=-1,hover=-1;
     int feedback=0,feedbackHand=0;
     Result result=Result::None;
@@ -539,11 +548,27 @@ class Engine {
         itemAssignment=s.quick.assigned;quickPressed=false;rearm=true;
     }
     shoulder::Gesture shoulderSwap;
+    leather::Reach leatherReach;
     vitals::PalmReveal palmReveal;
     std::array<Skill,128> choices{};
     std::array<int,128> choiceIndices{};
     std::array<int,skillcategories::Count> categoryCounts{};
     int allCount=0,editCategory=0,editClass=-1;
+    // The skill editor's tree filter, kept for this game (a game holds one character); filterClass
+    // is a safety check only: another class shows All.
+    int filter=skillcategories::All,filterClass=-1;
+    // Each wheel hand keeps its own page (Spells / Equipment / Map / Developer and its page) and
+    // tree filter, for this game: slot = wheelHand+1 (0: the combined wheel). pageHand is the slot
+    // loaded into the fields above; a closed wheel (wheelHand -1) changes nothing.
+    struct HandMenu {bool utility=false,map=false,developer=false;int devPage=0,filter=skillcategories::All,filterClass=-1;};
+    std::array<HandMenu,3> handMenus{};
+    int pageHand=-2;
+    uint64_t joined=0;   // the last non-zero session (mapzoom::NewGame: a new one is a new game)
+    void StoreHand(){if(pageHand>=0&&pageHand<int(handMenus.size()))handMenus[pageHand]={utility,map,developer,devPage,filter,filterClass};}
+    void LoadHand(int slot){
+        pageHand=std::clamp(slot,0,int(handMenus.size())-1);const auto& h=handMenus[pageHand];
+        utility=h.utility;map=h.map;developer=h.developer;devPage=h.devPage;filter=h.filter;filterClass=h.filterClass;
+    }
     const Skill& Choice(int index)const{return choices[choiceIndices[index]];}
     void FilterSkills(int category) {
         editCategory=category;editPage=choiceCount=0;
@@ -556,7 +581,9 @@ class Engine {
         choices=s.catalog;allCount=std::clamp<int>(s.skillCount,0,choices.size());editClass=s.skillClass;
         categoryCounts={};categoryCounts[skillcategories::All]=allCount;
         for(int i=0;i<allCount;++i)++categoryCounts[skillcategories::Category(editClass,choices[i].id,choices[i].owner)];
-        FilterSkills(skillcategories::All);editor=2;
+        // The tree last picked in this game, unless it has no skills now (or another class): All.
+        const bool keep=filter>=0&&filter<skillcategories::Count&&filterClass==editClass&&categoryCounts[filter]>0;
+        FilterSkills(keep?filter:skillcategories::All);editor=2;
     }
     // p, v and q are in WORLD metres/orientation; stage is the latest frame
     // used to draw it, kept through a brief loss of the view frame.
@@ -625,9 +652,13 @@ class Engine {
     }
 public:
     void Configure(Config c) {config=c;Reset();}
-    void Reset() {quickPressed=false;primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=devPage=0;map=developer=false;editSlot=-1;shoulderSwap.Reset();}
+    // Each hand's page (Map, Equipment, Developer and its page) and tree filter are kept through a close,
+    // a tracking or frame hiccup and character select; only a new game (Step) starts them over. Editors close.
+    void Reset() {quickPressed=false;primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;editSlot=-1;shoulderSwap.Reset();leatherReach.Reset();}
     MenuPage Page() const {return developer?MenuPage::Developer:editor==3?MenuPage::EditItems:editor==2?MenuPage::EditSkills:editor?MenuPage::EditSlots:map?MenuPage::Map:utility?MenuPage::Equipment:MenuPage::Spells;}
     int DeveloperPage() const {return devPage;}
+    int TreeFilter() const {return filter;}        // the open hand's kept skill tree (All when none)
+    int TreeFilterClass() const {return filterClass;}
     bool WheelVisible(bool heldButton) const {return heldButton&&!wheelLatch;}
     Output Step(const Input& in) {
         Output out;out.wheelHand=in.wheelHand;
@@ -653,23 +684,30 @@ public:
            !Valid(in.head)||!Valid(in.hand[0])||!Valid(in.hand[1])||!primed||session!=in.session||epoch!=in.epoch||dt<=0||dt>.15) {
             Reset();primed=in.active&&in.tracked[0]&&in.tracked[1]&&Valid(in.head)&&Valid(in.hand[0])&&Valid(in.hand[1])&&std::isfinite(in.time);
             if(session!=in.session)stowed=false;
+            // A new game (a new non-zero session; the counter only grows) starts every hand's menu over.
+            // A 0 (leaving, the title, character select) or a blip back to the same value keeps them.
+            if(mapzoom::NewGame(joined,in.session)){handMenus={};const int slot=pageHand;pageHand=-2;LoadHand(slot<0?0:slot);}
             session=in.session;epoch=in.epoch;lastTime=in.time;
             triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
             body=Valid(in.head)?UprightBody(in.head,body.q):Pose{};out.block=true;out.stowed=stowed;out.cancelPending=true;return out;
         }
         lastTime=in.time;
         const bool handChanged=in.wheelHand!=lastWheelHand;
-        if(handChanged){quickPressed=false;editor=0;editSlot=-1;map=utility=developer=false;rearm=true;wheelLatch=false;lastWheelHand=in.wheelHand;}
+        if(handChanged){quickPressed=false;editor=0;editSlot=-1;rearm=true;wheelLatch=false;lastWheelHand=in.wheelHand;}
+        // The open wheel's hand shows that hand's own last page; a closed wheel (wheelHand -1 in the
+        // transport) is not a hand, so a close and reopen on the same hand keeps everything.
+        if(in.wheel&&in.wheelHand+1!=pageHand){StoreHand();LoadHand(in.wheelHand+1);}
         const bool triggerEdge=trigger&&!triggerWas&&!handChanged;
         const bool edges[2]={grips[0]&&!gripWas[0],grips[1]&&!gripWas[1]};
         triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
-        if(!in.wheel){quickPressed=false;wheelLatch=false;editor=0;map=developer=false;editSlot=-1;}
+        // A plain close keeps the page for the next open (Map and Developer too); the editors close.
+        if(!in.wheel){quickPressed=false;wheelLatch=false;editor=0;editSlot=-1;}
         if(!in.snapshot.developer)developer=false;
         if(!trigger&&!grips[0]&&!grips[1])rearm=false;
-        if(in.cancel) {quickPressed=false;Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=developer=false;editSlot=-1;}
+        if(in.cancel) {quickPressed=false;Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=developer=false;devPage=0;editSlot=-1;}   // the cancel input, as before (transport has sent none since the per-hand wheels)
         if(pending.action!=Action::None) {
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
-                result=in.reply.result;resultAt=in.time;out.feedback=(result==Result::Applied||result==Result::Dispatched||result==Result::DebugUpdated||result==Result::TurnsUpdated||result==Result::SharpUpdated||result==Result::FillUpdated)?2:3;
+                result=in.reply.result;resultAt=in.time;out.feedback=(result==Result::Applied||result==Result::Dispatched||result==Result::DebugUpdated||result==Result::TurnsUpdated||result==Result::SharpUpdated||result==Result::FillUpdated||result==Result::RimsUpdated||result==Result::SkyRimsUpdated||result==Result::BodiesUpdated)?2:3;
                 out.feedbackHand=pendingHand;
                 if(result==Result::Applied&&pending.action==Action::Equip)stowed=false;
                 if(result==Result::Applied&&pending.action==Action::Potion&&pending.item==held.item)consumed=true;
@@ -711,11 +749,17 @@ public:
         if(shoulder.swap&&request(Action::Equip,3-int(in.snapshot.activeSet))){
             pendingHand=dominant;out.feedback=1;out.feedbackHand=dominant;
         }
-        // Right stick up: the wheel's RUN / WALK without opening it.
-        if(in.runWalk&&!wheel) {
-            if(fresh&&request(Action::RunWalk,0)){pendingHand=0;out.feedback=1;out.feedbackHand=0;}
-            else {out.feedback=3;out.feedbackHand=0;}
-        }
+        // The tabbed menu on leather (leather_menu.h): the left hand reaches over the
+        // left shoulder and grips. With Dominant hand = Left that is the swap's, so off.
+        leather::ReachInput sheet;sheet.time=in.time;sheet.session=in.session;sheet.epoch=in.epoch;
+        sheet.active=in.active&&in.leatherReach&&dominant==0;sheet.tracked=in.tracked[leather::Hand];
+        sheet.head=in.head.p;sheet.hand=in.hand[leather::Hand].p;sheet.heading=body.q;sheet.grip=in.grip[leather::Hand];
+        sheet.allowed=!wheel&&!in.quickCast&&!in.cancel&&!rearm&&bottle<0&&holster<0&&pending.action==Action::None;
+        const auto reached=leatherReach.Step(sheet);out.block=out.block||reached.block;
+        if(reached.open){out.inventory=true;out.feedback=1;out.feedbackHand=leather::Hand;}
+        // VR Settings > Movement speed: WALK walks, every other stop runs. When the game's
+        // toggle is the other way, its own run / walk command (no tick).
+        if(in.gaitToggle&&fresh&&request(Action::RunWalk,0))pendingHand=0;
         if(wheel) {
             out.wheel=true;out.utility=utility;out.map=map;out.hover=in.hover;out.block=true;out.leftStrikes=in.leftStrikes;
             owner[0]=owner[1]=Owner::Wheel;
@@ -745,10 +789,6 @@ public:
                         const auto* assigned=in.snapshot.quick.Find(quickPressedCode);
                         quickPressedItem=assigned?assigned->item:Item{};
                     } else out.feedback=3;
-                } else if(QuickControls(Page())&&in.hover==RunWalkCell) {
-                    if(fresh)request(Action::RunWalk,0);else out.feedback=3;
-                    pendingHand=in.wheelHand>=0?1-in.wheelHand:0;
-                    wheelLatch=true;out.wheel=false;rearm=true;
                 } else if(QuickControls(Page())&&in.hover==LeftStrikesCell) {
                     // A local setting, not a game command: the wheel stays open to show it.
                     if(in.leftStrikes>=0){out.toggleLeftStrikes=true;out.feedback=1;}else out.feedback=3;
@@ -765,7 +805,7 @@ public:
                     }
                     rearm=true;
                 } else if(!editor&&in.hover==13&&fresh&&in.snapshot.developer) {
-                    developer=!developer;devPage=0;utility=map=false;out.utility=out.map=false;rearm=true;
+                    developer=!developer;devPage=std::clamp(devPage,0,dev::PageCount-1);utility=map=false;out.utility=out.map=false;rearm=true;   // its last page
                 } else if(developer&&in.hover>=DeveloperPageCell(0)&&in.hover<DeveloperPageCell(dev::PageCount)) {
                     if(fresh)devPage=in.hover-DeveloperPageCell(0);
                     out.hover=-1;rearm=true;
@@ -777,7 +817,7 @@ public:
                 } else if(editor==2) {
                     if(in.hover>=SkillCategoryCell(0)&&in.hover<SkillCategoryCell(skillcategories::Count)) {
                         const int category=in.hover-SkillCategoryCell(0);
-                        if(fresh&&categoryCounts[category])FilterSkills(category);
+                        if(fresh&&categoryCounts[category]){FilterSkills(category);filter=category;filterClass=editClass;out.treePicked=true;}
                         else out.feedback=3;
                     }
                     else if(in.hover==11){editor=in.wheelHand>=0?0:1;editSlot=-1;}
